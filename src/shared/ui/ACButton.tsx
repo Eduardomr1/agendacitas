@@ -1,8 +1,11 @@
 import React from "react";
 
+export type VarianteBoton = "primario" | "secundario" | "peligro" | "contorno" | "fantasma";
+
 interface ACButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variante?: "primario" | "secundario" | "peligro" | "contorno";
+  variante?: VarianteBoton;
   cargando?: boolean;
+  icono?: React.ReactNode;
 }
 
 export const ACButton: React.FC<ACButtonProps> = ({
@@ -10,18 +13,24 @@ export const ACButton: React.FC<ACButtonProps> = ({
   variante = "primario",
   cargando = false,
   disabled,
+  icono,
   className = "",
   ...props
 }) => {
   const base =
-    "inline-flex items-center justify-center font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 min-h-[44px] px-4 py-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed";
+    "inline-flex items-center justify-center gap-2 font-medium rounded-xl transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-offset-2 min-h-[44px] px-4 py-2.5 text-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer active:scale-[0.98]";
 
-  const variantes = {
-    primario: "bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500",
-    secundario: "bg-gray-800 text-white hover:bg-gray-900 focus:ring-gray-700",
-    peligro: "bg-red-600 text-white hover:bg-red-700 focus:ring-red-500",
+  const variantes: Record<VarianteBoton, string> = {
+    primario:
+      "bg-zinc-900 text-white shadow-sm hover:bg-zinc-800 focus:ring-zinc-900",
+    secundario:
+      "bg-zinc-100 text-zinc-900 hover:bg-zinc-200 focus:ring-zinc-400",
+    peligro:
+      "bg-rose-600 text-white shadow-sm hover:bg-rose-700 focus:ring-rose-500",
     contorno:
-      "border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 focus:ring-blue-500",
+      "border border-zinc-200 bg-white text-zinc-700 shadow-xs hover:bg-zinc-50 hover:text-zinc-900 focus:ring-zinc-400",
+    fantasma:
+      "bg-transparent text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 focus:ring-zinc-300",
   };
 
   return (
@@ -54,7 +63,10 @@ export const ACButton: React.FC<ACButtonProps> = ({
           <span>Cargando...</span>
         </span>
       ) : (
-        children
+        <>
+          {icono && <span className="w-4 h-4 flex items-center justify-center">{icono}</span>}
+          {children}
+        </>
       )}
     </button>
   );
