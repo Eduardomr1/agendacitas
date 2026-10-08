@@ -5,7 +5,7 @@ import React from "react";
 
 export default function PaginaLoginAdmin() {
   return (
-    <main className="min-h-screen bg-zinc-50/70 flex items-center justify-center p-4 selection:bg-zinc-900 selection:text-white">
+    <main className="min-h-screen bg-white flex items-center justify-center p-4 selection:bg-zinc-900 selection:text-white">
       <LoginView
         onIniciarSesion={async (email, pass) => {
           console.log("Login con:", email);

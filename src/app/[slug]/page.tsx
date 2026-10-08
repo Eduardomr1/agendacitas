@@ -37,7 +37,7 @@ export default function PaginaReservaPublica() {
   ];
 
   return (
-    <main className="min-h-screen bg-zinc-50/70 py-8 md:py-14 px-4 selection:bg-zinc-900 selection:text-white">
+    <main className="min-h-screen bg-white py-8 md:py-14 px-4 selection:bg-zinc-900 selection:text-white">
       <ReservasView
         negocio={negocioDemo}
         servicios={serviciosDemo}
