@@ -13,7 +13,7 @@ export default function PaginaConfiguracionNegocio() {
   };
 
   return (
-    <main className="min-h-screen bg-gray-50 py-10">
+    <main className="py-2">
       <PerfilNegocioView
         negocio={negocioDemo}
         onGuardar={async (datos) => {

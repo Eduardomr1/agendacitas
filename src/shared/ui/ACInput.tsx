@@ -4,17 +4,20 @@ interface ACInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   etiqueta?: string;
   error?: string;
   icono?: React.ReactNode;
+  iconoIzquierda?: React.ReactNode;
 }
 
 export const ACInput: React.FC<ACInputProps> = ({
   etiqueta,
   error,
   icono,
+  iconoIzquierda,
   id,
   className = "",
   ...props
 }) => {
   const inputId = id || props.name;
+  const iconoActivo = iconoIzquierda || icono;
 
   return (
     <div className="w-full flex flex-col gap-1.5">
@@ -27,15 +30,15 @@ export const ACInput: React.FC<ACInputProps> = ({
         </label>
       )}
       <div className="relative flex items-center">
-        {icono && (
+        {iconoActivo && (
           <span className="absolute left-3.5 text-zinc-400 pointer-events-none w-4 h-4 flex items-center justify-center">
-            {icono}
+            {iconoActivo}
           </span>
         )}
         <input
           id={inputId}
           className={`w-full min-h-[44px] ${
-            icono ? "pl-10" : "px-3.5"
+            iconoActivo ? "pl-10" : "px-3.5"
           } pr-3.5 py-2.5 rounded-xl border text-sm transition-all duration-150 focus:outline-none focus:ring-2 placeholder:text-zinc-400 ${
             error
               ? "border-rose-400 focus:ring-rose-200 focus:border-rose-500 bg-rose-50/20"

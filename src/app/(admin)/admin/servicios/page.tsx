@@ -36,7 +36,7 @@ export default function PaginaGestionServicios() {
   ]);
 
   return (
-    <main className="min-h-screen bg-gray-50 py-8">
+    <main className="py-2">
       <GestionServiciosView
         servicios={servicios}
         horarios={horarios}

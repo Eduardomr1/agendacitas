@@ -6,6 +6,8 @@ interface ACButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variante?: VarianteBoton;
   cargando?: boolean;
   icono?: React.ReactNode;
+  iconoIzquierda?: React.ReactNode;
+  iconoDerecha?: React.ReactNode;
 }
 
 export const ACButton: React.FC<ACButtonProps> = ({
@@ -14,6 +16,8 @@ export const ACButton: React.FC<ACButtonProps> = ({
   cargando = false,
   disabled,
   icono,
+  iconoIzquierda,
+  iconoDerecha,
   className = "",
   ...props
 }) => {
@@ -64,8 +68,17 @@ export const ACButton: React.FC<ACButtonProps> = ({
         </span>
       ) : (
         <>
-          {icono && <span className="w-4 h-4 flex items-center justify-center">{icono}</span>}
+          {(iconoIzquierda || icono) && (
+            <span className="w-4 h-4 flex items-center justify-center shrink-0">
+              {iconoIzquierda || icono}
+            </span>
+          )}
           {children}
+          {iconoDerecha && (
+            <span className="w-4 h-4 flex items-center justify-center shrink-0">
+              {iconoDerecha}
+            </span>
+          )}
         </>
       )}
     </button>
