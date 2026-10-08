@@ -48,9 +48,9 @@ export default function AdminLayout({
   ];
 
   return (
-    <div className="min-h-screen bg-zinc-50/70 text-zinc-900 flex flex-col font-sans selection:bg-zinc-900 selection:text-white">
+    <div className="min-h-screen bg-white text-zinc-900 flex flex-col font-sans selection:bg-zinc-900 selection:text-white">
       {/* Top Navbar */}
-      <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-zinc-200/80">
+      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-zinc-100">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
           {/* Logo & Marca */}
           <div className="flex items-center gap-6">
