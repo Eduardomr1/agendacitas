@@ -39,10 +39,10 @@ export const ACInput: React.FC<ACInputProps> = ({
           id={inputId}
           className={`w-full min-h-[44px] ${
             iconoActivo ? "pl-10" : "px-3.5"
-          } pr-3.5 py-2.5 rounded-xl border text-sm transition-all duration-150 focus:outline-none focus:ring-2 placeholder:text-zinc-400 ${
+          } pr-3.5 py-2.5 rounded-xl border text-sm text-zinc-900 font-medium bg-white transition-all duration-150 focus:outline-none focus:ring-2 placeholder:text-zinc-400 ${
             error
               ? "border-rose-400 focus:ring-rose-200 focus:border-rose-500 bg-rose-50/20"
-              : "border-zinc-200/90 hover:border-zinc-300 focus:ring-zinc-900/10 focus:border-zinc-900 bg-white"
+              : "border-zinc-200/90 hover:border-zinc-300 focus:ring-zinc-900/10 focus:border-zinc-900"
           } ${className}`}
           {...props}
         />
