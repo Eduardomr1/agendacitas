@@ -1,36 +1,113 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AgendaCitas — Sistema SaaS de Reservas y Gestión de Citas
 
-## Getting Started
+Plataforma web moderna y responsiva diseñada para que negocios de servicios (barberías, consultorios, estudios, spas) permitan a sus clientes reservar citas en línea sin fricción, con control total de horarios y prevención estricta de colisiones.
 
-First, run the development server:
+Diseñada bajo los principios de **Clean Architecture** (Domain, Data, Presentation) y organización **Feature-First** con contratos tipados de error (`Failure`), validaciones desacopladas y desacoplamiento entre cliente y servidor.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+---
+
+## 🚀 Características Principales
+
+- **Página Pública de Reserva ([slug]):** Interfaz intuitiva en 3 pasos (Servicio → Fecha/Horario → Datos del cliente) que consume el motor de cálculo de disponibilidad.
+- **Motor Matemático Anti-Colisión:** Algoritmo que cruza horarios laborales, duración del servicio y citas existentes para garantizar que no existan traslapes ni reservas fuera de horario.
+- **Panel Administrativo del Negocio:**
+  - **Catálogo de Servicios:** Creación, edición, activación/desactivación y fijación de precios en centavos para precisión monetaria.
+  - **Horarios Laborales:** Configuración de rangos de apertura y cierre por día de la semana.
+  - **Agenda en Tiempo Real:** Monitor de citas con filtros de estado (`confirmada`, `completada`, `cancelada`) y acciones directas.
+- **Manejo Seguro de Errores con `Failure`:** Mapeo de errores de Postgres/Supabase a tipos semánticos amigables (`HORARIO_OCUPADO`, `SIN_CONEXION`, `DATOS_INVALIDOS`), protegiendo a la interfaz de exponer detalles técnicos o códigos de base de datos.
+- **Design System Propio:** Componentes accesibles construidos desde cero (`ACButton`, `ACInput`, `ACCard`) respetando lineamientos de accesibilidad web (tamaños táctiles mínimos de 44px, estados de carga y feedback visual).
+
+---
+
+## 🛠️ Stack Tecnológico
+
+| Capa | Tecnología |
+|---|---|
+| **Framework Web** | [Next.js 16](https://nextjs.org/) (App Router + Turbopack + React 19) |
+| **Lenguaje** | [TypeScript](https://www.typescriptlang.org/) (Strict Mode) |
+| **Estilos** | [Tailwind CSS 4](https://tailwindcss.com/) |
+| **Base de Datos & ORM** | [PostgreSQL (Supabase)](https://supabase.com/) + [Drizzle ORM](https://orm.drizzle.team/) |
+| **Pruebas Automatizadas** | [Vitest](https://vitest.dev/) (Unitarias en todas las capas) |
+| **Control de Versiones** | Git Flow (`main`, `dev`, ramas `feat/*`) |
+
+---
+
+## 🏛️ Arquitectura del Sistema (Clean Architecture + Feature-First)
+
+El código fuente en `src/` sigue un aislamiento estricto de responsabilidades:
+
+```
+src/
+├── app/                              # Rutas y envoltorios de Next.js App Router
+│   ├── (admin)/                      # Panel administrativo (/admin/dashboard, /admin/servicios, etc.)
+│   ├── [slug]/                       # Página pública de reserva para clientes
+│   └── page.tsx                      # Landing page principal
+├── features/
+│   ├── reservas/                     # Flujo público de cliente
+│   │   ├── domain/                   # Entidades puras y UseCases (CrearCitaUseCase)
+│   │   ├── data/                     # Implementación Drizzle (ReservasRepositoryImpl)
+│   │   ├── presentation/             # Vista interactiva (ReservasView)
+│   │   └── index.ts / server.ts      # Barrels desacoplados (cliente vs servidor)
+│   ├── auth/                         # Autenticación y gestión de sesión de dueños
+│   ├── negocio/                      # Configuración de perfil, slug y zona horaria
+│   ├── servicios/                    # Catálogo de servicios y horarios semanales
+│   └── citas-admin/                  # Panel y control de estados de citas
+└── shared/
+    ├── errors/                       # Tipos de Failure y traductor de base de datos
+    ├── ui/                           # Design System (ACButton, ACInput, ACCard)
+    └── lib/                          # Motor de disponibilidad matemática
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Reglas de Dependencia
+1. **Dominio Puro:** Los Casos de Uso (`usecases`) no importan frameworks, bases de datos ni UI. Contienen exclusivamente reglas de negocio y validaciones.
+2. **Barrels Separados:** Se implementan barrels diferenciados (`index.ts` para componentes de cliente y `server.ts` para repositorios de servidor) evitando la fuga accidental de dependencias de Node.js al navegador.
+3. **Cero `any`:** Tipado estricto en el 100% de contratos, entidades e interfaces.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+---
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 🧪 Pruebas Automatizadas
 
-## Learn More
+El proyecto cuenta con una suite integral de pruebas unitarias que cubren el motor matemático de disponibilidad, la traducción de errores y la lógica de los casos de uso:
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+# Ejecutar todas las pruebas con Vitest
+npm test
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+# Ejecutar pruebas en modo observador
+npx vitest
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+---
 
-## Deploy on Vercel
+## 💻 Instalación y Ejecución Local
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+1. **Clonar el repositorio:**
+   ```bash
+   git clone https://github.com/Eduardomr1/agendacitas.git
+   cd agendacitas
+   ```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+2. **Instalar dependencias:**
+   ```bash
+   npm install
+   ```
+
+3. **Configurar variables de entorno:**
+   Copia `.env.example` a `.env.local` y agrega tus credenciales de Supabase / Postgres:
+   ```env
+   DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/postgres
+   NEXT_PUBLIC_SUPABASE_URL=https://[PROJECT-REF].supabase.co
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=[TU-ANON-KEY]
+   ```
+
+4. **Ejecutar en desarrollo:**
+   ```bash
+   npm run dev
+   ```
+   Abre [http://localhost:3000](http://localhost:3000) en tu navegador.
+
+---
+
+## 📄 Licencia
+
+Este proyecto es de código abierto bajo la licencia MIT. Desarrollado por [Eduardo Maytorena](https://github.com/Eduardomr1).
