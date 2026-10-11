@@ -6,6 +6,7 @@ describe("EliminarServicioUseCase (Dominio)", () => {
   const mockRepo: IServiciosRepository = {
     listarServicios: vi.fn(),
     crearServicio: vi.fn(),
+    actualizarServicio: vi.fn(),
     cambiarEstadoServicio: vi.fn(),
     eliminarServicio: vi.fn().mockResolvedValue({}),
     obtenerHorarios: vi.fn(),

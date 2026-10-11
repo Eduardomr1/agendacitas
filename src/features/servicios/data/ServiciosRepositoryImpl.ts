@@ -5,6 +5,7 @@ import { IServiciosRepository } from "../domain/repositories";
 import {
   ServicioItem,
   CrearServicioInput,
+  ActualizarServicioInput,
   HorarioLaboralItem,
   GuardarHorariosInput,
 } from "../domain/entities";
@@ -38,11 +39,36 @@ export class ServiciosRepositoryImpl implements IServiciosRepository {
           descripcion: input.descripcion || null,
           duracionMin: input.duracionMin,
           precioCentavos: input.precioCentavos,
+          categoria: input.categoria || null,
           activo: true,
         })
         .returning();
 
       return { data: nuevo };
+    } catch (error) {
+      return { failure: traducirErrorBaseDatos(error) };
+    }
+  }
+
+  async actualizarServicio(
+    input: ActualizarServicioInput
+  ): Promise<{ data?: ServicioItem; failure?: Failure }> {
+    try {
+      const valoresAActualizar: Partial<typeof servicios.$inferInsert> = {};
+      if (input.nombre !== undefined) valoresAActualizar.nombre = input.nombre;
+      if (input.descripcion !== undefined) valoresAActualizar.descripcion = input.descripcion;
+      if (input.duracionMin !== undefined) valoresAActualizar.duracionMin = input.duracionMin;
+      if (input.precioCentavos !== undefined) valoresAActualizar.precioCentavos = input.precioCentavos;
+      if (input.categoria !== undefined) valoresAActualizar.categoria = input.categoria;
+      if (input.activo !== undefined) valoresAActualizar.activo = input.activo;
+
+      const [actualizado] = await db
+        .update(servicios)
+        .set(valoresAActualizar)
+        .where(eq(servicios.id, input.id))
+        .returning();
+
+      return { data: actualizado };
     } catch (error) {
       return { failure: traducirErrorBaseDatos(error) };
     }

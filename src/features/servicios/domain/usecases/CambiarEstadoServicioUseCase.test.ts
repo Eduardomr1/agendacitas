@@ -6,6 +6,7 @@ describe("CambiarEstadoServicioUseCase (Dominio)", () => {
   const mockRepo: IServiciosRepository = {
     listarServicios: vi.fn(),
     crearServicio: vi.fn(),
+    actualizarServicio: vi.fn(),
     cambiarEstadoServicio: vi.fn().mockResolvedValue({}),
     eliminarServicio: vi.fn(),
     obtenerHorarios: vi.fn(),
@@ -27,5 +28,12 @@ describe("CambiarEstadoServicioUseCase (Dominio)", () => {
 
     expect(res.failure).toBeUndefined();
     expect(mockRepo.cambiarEstadoServicio).toHaveBeenCalledWith("srv-123", true);
+  });
+
+  it("permite pausar un servicio alternando su estado activo a false", async () => {
+    const res = await usecase.execute("srv-123", false);
+
+    expect(res.failure).toBeUndefined();
+    expect(mockRepo.cambiarEstadoServicio).toHaveBeenCalledWith("srv-123", false);
   });
 });
