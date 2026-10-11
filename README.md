@@ -34,6 +34,55 @@ Diseñada bajo los principios de **Clean Architecture** (Domain, Data, Presentat
 
 ## 🏛️ Arquitectura del Sistema (Clean Architecture + Feature-First)
 
+> 📖 **Especificación completa:** Consulta [docs/arquitectura/README.md](../docs/arquitectura/README.md) y [docs/arquitectura/reservas-clean-architecture.md](../docs/arquitectura/reservas-clean-architecture.md) para el desglose exhaustivo de casos de uso y contratos de fallo.
+
+```mermaid
+flowchart TB
+    subgraph Presentation_Layer["Capa de Presentación (Presentation Layer)"]
+        direction TB
+        AppRouter["Next.js 16 App Router<br/>(Server Components & Client Views)"]
+        DesignSystem["Design System Accesible<br/>(ACButton, ACInput, ACCard, ACCalendar, ACToggle)"]
+        Views["Vistas por Feature<br/>• ReservasView ([slug])<br/>• GestionServiciosView (Admin)<br/>• ServicioModal"]
+        ClientBarrel["Barrel de Cliente (index.ts)<br/>(Filtra dependencias para el navegador)"]
+    end
+
+    subgraph Domain_Layer["Capa de Dominio (Domain Layer - Pure Business Core)"]
+        direction TB
+        Entities["Entidades de Negocio Puras<br/>(Servicio, Cita, HorarioLaboral)"]
+        UseCases["Casos de Uso (Interactors)<br/>• CrearCitaUseCase<br/>• ActualizarServicioUseCase<br/>• CambiarEstadoServicioUseCase<br/>• EliminarServicioUseCase"]
+        MathEngine["Motor Matemático Anti-Colisión<br/>(disponibilidad.ts - Intervalos continuos)"]
+        RepoInterfaces["Interfaces de Repositorio (Puertos)<br/>(ReservasRepository, ServiciosRepository)"]
+        Failures["Tipos de Fallo Semánticos (Failure)<br/>HORARIO_OCUPADO | SIN_CONEXION | DATOS_INVALIDOS"]
+    end
+
+    subgraph Data_Layer["Capa de Datos e Infraestructura (Data & Infrastructure Layer)"]
+        direction TB
+        RepoImpl["Implementaciones de Repositorio (Adaptadores)<br/>ReservasRepositoryImpl<br/>ServiciosRepositoryImpl"]
+        Drizzle["Drizzle ORM Schema & Queries<br/>(Consultas estructuradas tipadas)"]
+        DBDriver["Conexión PostgreSQL / Supabase<br/>(Pool de conexiones)"]
+        ErrorTranslator["Traductor de Errores (traducir.ts)<br/>Postgres Code 23505 ➔ Failure: HORARIO_OCUPADO"]
+        ServerBarrel["Barrel de Servidor (server.ts)<br/>(Aislamiento estricto de secretos de BD)"]
+    end
+
+    %% Relaciones y flujo de dependencias hacia el Dominio
+    Views -->|"Invoca Casos de Uso con DTOs"| UseCases
+    AppRouter --> Views
+    DesignSystem --> Views
+    ClientBarrel --> Views
+
+    UseCases -->|"Opera sobre"| Entities
+    UseCases -->|"Consulta disponibilidad"| MathEngine
+    UseCases -->|"Retorna Result<T, Failure>"| Failures
+    UseCases -->|"Invoca contratos de persistencia"| RepoInterfaces
+
+    RepoImpl -.->|"Implementa interfaces (DIP)"| RepoInterfaces
+    RepoImpl --> Drizzle
+    Drizzle --> DBDriver
+    Drizzle -.->|"Captura errores de SQL"| ErrorTranslator
+    ErrorTranslator -->|"Mapea a fallos de dominio"| Failures
+    ServerBarrel --> RepoImpl
+```
+
 El código fuente en `src/` sigue un aislamiento estricto de responsabilidades:
 
 ```
