@@ -2,4 +2,6 @@
 export * from "./domain/entities";
 export * from "./domain/repositories";
 export * from "./domain/usecases/CrearServicioUseCase";
+export * from "./domain/usecases/CambiarEstadoServicioUseCase";
+export * from "./domain/usecases/EliminarServicioUseCase";
 export * from "./data/ServiciosRepositoryImpl";
