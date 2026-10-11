@@ -35,6 +35,11 @@ export class CrearServicioUseCase {
       };
     }
 
-    return this.repository.crearServicio(input);
+    return this.repository.crearServicio({
+      ...input,
+      nombre: input.nombre.trim(),
+      categoria: input.categoria?.trim() || undefined,
+      descripcion: input.descripcion?.trim() || undefined,
+    });
   }
 }

@@ -8,20 +8,42 @@ export default function PaginaGestionServicios() {
     {
       id: "srv-1",
       negocioId: "neg-1",
-      nombre: "Corte Tradicional",
-      descripcion: "Corte con tijera y peinado",
-      duracionMin: 30,
+      nombre: "Corte Tradicional & Peinado",
+      descripcion: "Corte con tijera, navaja y lavado con tónico refrescante",
+      duracionMin: 35,
       precioCentavos: 25000,
+      categoria: "Cortes",
       activo: true,
     },
     {
       id: "srv-2",
       negocioId: "neg-1",
-      nombre: "Perfilado de Barba",
-      descripcion: "Toalla caliente y navaja",
-      duracionMin: 20,
-      precioCentavos: 15000,
+      nombre: "Perfilado de Barba y Toalla Caliente",
+      descripcion: "Ritual completo con bálsamo hidratante y aceite para barba",
+      duracionMin: 25,
+      precioCentavos: 18000,
+      categoria: "Barba",
       activo: true,
+    },
+    {
+      id: "srv-3",
+      negocioId: "neg-1",
+      nombre: "Combo Completo: Corte & Barba",
+      descripcion: "Servicio premium con masaje capilar y tratamiento de toalla",
+      duracionMin: 60,
+      precioCentavos: 38000,
+      categoria: "Cortes",
+      activo: true,
+    },
+    {
+      id: "srv-4",
+      negocioId: "neg-1",
+      nombre: "Tratamiento Facial Exfoliante",
+      descripcion: "Limpieza profunda con mascarilla de arcilla negra",
+      duracionMin: 45,
+      precioCentavos: 32000,
+      categoria: "Tratamientos",
+      activo: false, // Inicia pausado para demostrar badge de Pausado
     },
   ]);
 
@@ -41,24 +63,41 @@ export default function PaginaGestionServicios() {
         servicios={servicios}
         horarios={horarios}
         onCrearServicio={async (input) => {
-          const nuevo = {
+          const nuevo: ServicioItem = {
             id: `srv-${Date.now()}`,
             negocioId: "neg-1",
             nombre: input.nombre,
             descripcion: input.descripcion || null,
             duracionMin: input.duracionMin,
             precioCentavos: input.precioCentavos,
+            categoria: input.categoria || null,
             activo: true,
           };
-          setServicios([...servicios, nuevo]);
+          setServicios((prev) => [...prev, nuevo]);
+        }}
+        onActualizarServicio={async (input) => {
+          setServicios((prev) =>
+            prev.map((s) => {
+              if (s.id !== input.id) return s;
+              return {
+                ...s,
+                nombre: input.nombre !== undefined ? input.nombre : s.nombre,
+                descripcion: input.descripcion !== undefined ? input.descripcion : s.descripcion,
+                duracionMin: input.duracionMin !== undefined ? input.duracionMin : s.duracionMin,
+                precioCentavos: input.precioCentavos !== undefined ? input.precioCentavos : s.precioCentavos,
+                categoria: input.categoria !== undefined ? input.categoria : s.categoria,
+                activo: input.activo !== undefined ? input.activo : s.activo,
+              };
+            })
+          );
         }}
         onAlternarEstadoServicio={async (id, activo) => {
-          setServicios(
-            servicios.map((s) => (s.id === id ? { ...s, activo } : s))
+          setServicios((prev) =>
+            prev.map((s) => (s.id === id ? { ...s, activo } : s))
           );
         }}
         onEliminarServicio={async (id) => {
-          setServicios(servicios.filter((s) => s.id !== id));
+          setServicios((prev) => prev.filter((s) => s.id !== id));
         }}
         onGuardarHorarios={async (nuevosHorarios) => {
           setHorarios(
@@ -68,7 +107,6 @@ export default function PaginaGestionServicios() {
               ...h,
             }))
           );
-          alert("Horarios guardados correctamente");
         }}
       />
     </main>

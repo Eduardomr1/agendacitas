@@ -19,6 +19,7 @@ export const servicios = pgTable("servicios", {
   duracionMin: integer("duracion_min").notNull(),
   precioCentavos: integer("precio_centavos").notNull(),
   activo: boolean("activo").default(true).notNull(),
+  categoria: text("categoria"),
 });
 
 export const horarios = pgTable("horarios", {

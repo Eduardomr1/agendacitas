@@ -18,6 +18,7 @@ describe("CrearServicioUseCase (Dominio)", () => {
     }),
     cambiarEstadoServicio: vi.fn(),
     eliminarServicio: vi.fn(),
+    actualizarServicio: vi.fn(),
     obtenerHorarios: vi.fn(),
     guardarHorarios: vi.fn(),
   };
@@ -59,16 +60,36 @@ describe("CrearServicioUseCase (Dominio)", () => {
     expect(res.failure?.tipo).toBe("DATOS_INVALIDOS");
   });
 
+  it("rechaza duración superior a 480 minutos (8 horas)", async () => {
+    const res = await usecase.execute({
+      negocioId: "neg-1",
+      nombre: "Corte",
+      duracionMin: 600,
+      precioCentavos: 10000,
+    });
+
+    expect(res.failure?.tipo).toBe("DATOS_INVALIDOS");
+    expect(res.failure?.mensajeUsuario).toContain("duración debe ser entre 1 minuto y 480 minutos");
+  });
+
   it("crea el servicio con éxito si los datos son correctos", async () => {
     const res = await usecase.execute({
       negocioId: "neg-1",
       nombre: "Corte Fade",
       duracionMin: 45,
       precioCentavos: 20000,
+      categoria: "Cortes",
     });
 
     expect(res.data).toBeDefined();
     expect(res.data?.id).toBe("srv-99");
-    expect(mockRepo.crearServicio).toHaveBeenCalledOnce();
+    expect(mockRepo.crearServicio).toHaveBeenCalledWith({
+      negocioId: "neg-1",
+      nombre: "Corte Fade",
+      duracionMin: 45,
+      precioCentavos: 20000,
+      categoria: "Cortes",
+      descripcion: undefined,
+    });
   });
 });

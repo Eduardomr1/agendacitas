@@ -1,6 +1,7 @@
 import {
   ServicioItem,
   CrearServicioInput,
+  ActualizarServicioInput,
   HorarioLaboralItem,
   GuardarHorariosInput,
 } from "./entities";
@@ -9,6 +10,7 @@ import { Failure } from "@/shared/errors";
 export interface IServiciosRepository {
   listarServicios(negocioId: string): Promise<{ data?: ServicioItem[]; failure?: Failure }>;
   crearServicio(input: CrearServicioInput): Promise<{ data?: ServicioItem; failure?: Failure }>;
+  actualizarServicio(input: ActualizarServicioInput): Promise<{ data?: ServicioItem; failure?: Failure }>;
   cambiarEstadoServicio(id: string, activo: boolean): Promise<{ failure?: Failure }>;
   eliminarServicio(id: string): Promise<{ failure?: Failure }>;
 

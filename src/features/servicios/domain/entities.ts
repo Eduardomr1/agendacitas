@@ -6,6 +6,7 @@ export interface ServicioItem {
   duracionMin: number;
   precioCentavos: number;
   activo: boolean;
+  categoria?: string | null;
 }
 
 export interface CrearServicioInput {
@@ -14,6 +15,18 @@ export interface CrearServicioInput {
   descripcion?: string;
   duracionMin: number;
   precioCentavos: number;
+  categoria?: string;
+}
+
+export interface ActualizarServicioInput {
+  id: string;
+  negocioId?: string;
+  nombre?: string;
+  descripcion?: string | null;
+  duracionMin?: number;
+  precioCentavos?: number;
+  categoria?: string | null;
+  activo?: boolean;
 }
 
 export interface HorarioLaboralItem {
