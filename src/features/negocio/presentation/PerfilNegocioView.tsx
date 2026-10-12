@@ -2,7 +2,8 @@
 
 import React, { useState } from "react";
 import { ACCard, ACButton, ACInput, ACBadge } from "@/shared/ui";
-import { NegocioConfig, ActualizarNegocioInput } from "../domain/entities";
+import { NegocioConfig, ActualizarNegocioInput, HorarioDiaConfig } from "../domain/entities";
+import { HorariosAtencionConfig } from "./HorariosAtencionConfig";
 import {
   Store,
   Globe,
@@ -18,16 +19,22 @@ import {
 
 interface PerfilNegocioViewProps {
   negocio?: NegocioConfig | null;
+  horarios?: HorarioDiaConfig[];
   onGuardar: (datos: ActualizarNegocioInput) => Promise<void>;
+  onGuardarHorarios?: (horarios: HorarioDiaConfig[]) => Promise<void>;
   cargando?: boolean;
+  cargandoHorarios?: boolean;
   error?: string;
   exito?: boolean;
 }
 
 export const PerfilNegocioView: React.FC<PerfilNegocioViewProps> = ({
   negocio,
+  horarios,
   onGuardar,
+  onGuardarHorarios,
   cargando = false,
+  cargandoHorarios = false,
   error,
   exito = false,
 }) => {
@@ -229,12 +236,16 @@ export const PerfilNegocioView: React.FC<PerfilNegocioViewProps> = ({
               <Sparkles className="w-3.5 h-3.5 text-amber-500" />
               Consejo para tu enlace
             </p>
-            <p>
-              Comparte tu enlace en tu biografía de Instagram, perfil de WhatsApp Business o envíalo directamente por mensaje a tus clientes.
-            </p>
           </div>
         </div>
       </div>
+
+      {/* Sección Dedicada: Configuración de Horarios de Atención & Recesos */}
+      <HorariosAtencionConfig
+        horariosIniciales={horarios}
+        onGuardar={onGuardarHorarios}
+        cargando={cargandoHorarios}
+      />
     </div>
   );
 };
