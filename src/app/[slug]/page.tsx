@@ -1,10 +1,15 @@
 "use client";
 
-import { ReservasView } from "@/features/reservas";
-import React from "react";
+import { ReservasView, ConfirmarReservaDatos } from "@/features/reservas";
+import React, { useState } from "react";
 
 // Datos de demostración de un negocio para renderizado de la página pública
 export default function PaginaReservaPublica() {
+  const [servicioId, setServicioId] = useState<string>("srv-1");
+  const [fecha, setFecha] = useState<string>("2026-10-15");
+  const [exito, setExito] = useState(false);
+  const [cargando, setCargando] = useState(false);
+
   const negocioDemo = {
     id: "neg-demo-1",
     slug: "barberia-clasica",
@@ -19,6 +24,7 @@ export default function PaginaReservaPublica() {
       descripcion: "Lavado, corte personalizado con tijera y navaja, y peinado.",
       duracionMin: 30,
       precioCentavos: 25000,
+      categoria: "Cortes",
     },
     {
       id: "srv-2",
@@ -26,6 +32,7 @@ export default function PaginaReservaPublica() {
       descripcion: "Toalla caliente, aceite de hidratación y perfilado al ras.",
       duracionMin: 30,
       precioCentavos: 18000,
+      categoria: "Barbería",
     },
     {
       id: "srv-3",
@@ -33,20 +40,30 @@ export default function PaginaReservaPublica() {
       descripcion: "Experiencia completa de corte y cuidado de barba.",
       duracionMin: 60,
       precioCentavos: 40000,
+      categoria: "Paquetes",
     },
   ];
 
+  const handleConfirmar = async (_datos: ConfirmarReservaDatos) => {
+    setCargando(true);
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    setCargando(false);
+    setExito(true);
+  };
+
   return (
-    <main className="min-h-screen bg-white py-8 md:py-14 px-4 selection:bg-zinc-900 selection:text-white">
+    <main className="min-h-screen bg-zinc-50/50 py-8 md:py-14 px-4 selection:bg-zinc-900 selection:text-white">
       <ReservasView
         negocio={negocioDemo}
         servicios={serviciosDemo}
         slotsDisponibles={["10:00", "10:30", "11:00", "11:30", "16:00", "16:30", "17:00"]}
-        fechaSeleccionada="2026-10-15"
-        servicioSeleccionadoId="srv-1"
-        onCambiarFecha={() => {}}
-        onCambiarServicio={() => {}}
-        onConfirmarReserva={async () => {}}
+        fechaSeleccionada={fecha}
+        servicioSeleccionadoId={servicioId}
+        onCambiarFecha={setFecha}
+        onCambiarServicio={setServicioId}
+        onConfirmarReserva={handleConfirmar}
+        cargando={cargando}
+        exito={exito}
       />
     </main>
   );
