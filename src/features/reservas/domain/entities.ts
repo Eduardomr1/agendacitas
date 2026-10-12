@@ -11,6 +11,7 @@ export interface ServicioPublico {
   descripcion: string | null;
   duracionMin: number;
   precioCentavos: number;
+  categoria?: string | null;
 }
 
 export interface CitaSolicitud {
@@ -21,6 +22,7 @@ export interface CitaSolicitud {
   clienteNombre: string;
   clienteEmail: string;
   clienteTelefono?: string;
+  notas?: string;
 }
 
 export interface CitaResultado {
@@ -30,4 +32,5 @@ export interface CitaResultado {
   clienteNombre: string;
   clienteEmail: string;
   estado: string;
+  notas?: string;
 }

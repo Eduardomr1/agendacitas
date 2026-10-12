@@ -8,26 +8,22 @@ export interface CitaExistenteMinutos {
   finMin: number;
 }
 
-/**
- * Convierte formato "HH:MM" a minutos desde medianoche (0 a 1439).
- */
-export function horaAMinutos(hora: string): number {
-  const [h, m] = hora.split(":").map(Number);
-  return h * 60 + m;
-}
+// Re-exportar el motor completo de dominio para máxima interoperabilidad
+export * from "@/features/reservas/domain/motorDisponibilidad";
 
-/**
- * Convierte minutos desde medianoche a formato "HH:MM".
- */
-export function minutosAHora(minutos: number): string {
-  const h = Math.floor(minutos / 60);
-  const m = minutos % 60;
-  return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
-}
+import {
+  horaAMinutos as horaAMinutosMotor,
+  minutosAHora as minutosAHoraMotor,
+  calcularSlotsDisponibles,
+} from "@/features/reservas/domain/motorDisponibilidad";
+
+export const horaAMinutos = horaAMinutosMotor;
+export const minutosAHora = minutosAHoraMotor;
 
 /**
  * Genera todos los slots libres disponibles para un servicio de duración específica,
  * evitando cualquier choque con citas ya existentes.
+ * (Mantenido para compatibilidad con código existente).
  */
 export function calcularHorariosDisponibles(
   horarioLaboral: IntervaloMinutos,
@@ -35,25 +31,17 @@ export function calcularHorariosDisponibles(
   duracionServicioMin: number,
   pasoMin: number = 30
 ): string[] {
-  const slotsDisponibles: string[] = [];
-
-  for (
-    let actual = horarioLaboral.inicioMin;
-    actual + duracionServicioMin <= horarioLaboral.finMin;
-    actual += pasoMin
-  ) {
-    const slotFin = actual + duracionServicioMin;
-
-    // Verificar si el slot choca con alguna cita existente
-    // Choque: (slotInicio < citaFin) && (slotFin > citaInicio)
-    const hayConflicto = citasExistentes.some(
-      (cita) => actual < cita.finMin && slotFin > cita.inicioMin
-    );
-
-    if (!hayConflicto) {
-      slotsDisponibles.push(minutosAHora(actual));
-    }
-  }
-
-  return slotsDisponibles;
+  return calcularSlotsDisponibles({
+    horarioAtencion: {
+      abre: minutosAHora(horarioLaboral.inicioMin),
+      cierra: minutosAHora(horarioLaboral.finMin),
+      activo: true,
+    },
+    duracionServicioMin,
+    pasoMin,
+    citasExistentes: citasExistentes.map((c) => ({
+      inicio: minutosAHora(c.inicioMin),
+      fin: minutosAHora(c.finMin),
+    })),
+  });
 }

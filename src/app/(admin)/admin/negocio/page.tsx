@@ -19,6 +19,9 @@ export default function PaginaConfiguracionNegocio() {
         onGuardar={async (datos) => {
           console.log("Guardar negocio:", datos);
         }}
+        onGuardarHorarios={async (horarios) => {
+          console.log("Guardar horarios:", horarios);
+        }}
       />
     </main>
   );
