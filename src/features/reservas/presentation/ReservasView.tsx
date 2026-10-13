@@ -22,6 +22,7 @@ import { BookingStepperNav } from "./components/BookingStepperNav";
 import { PasoServicios } from "./components/PasoServicios";
 import { PasoFechaHorario } from "./components/PasoFechaHorario";
 import { PasoContacto } from "./components/PasoContacto";
+import { ConfirmacionReserva } from "./components/ConfirmacionReserva";
 
 export interface ConfirmarReservaDatos {
   slot: string;
@@ -43,6 +44,7 @@ export interface ReservasViewProps {
   cargando?: boolean;
   error?: string;
   exito?: boolean;
+  codigoConfirmacion?: string;
 }
 
 export const ReservasView: React.FC<ReservasViewProps> = ({
@@ -57,6 +59,7 @@ export const ReservasView: React.FC<ReservasViewProps> = ({
   cargando = false,
   error,
   exito = false,
+  codigoConfirmacion,
 }) => {
   const [paso, setPaso] = useState<PasoReserva>(1);
   const [slotSeleccionado, setSlotSeleccionado] = useState<string>("");
@@ -94,105 +97,40 @@ export const ReservasView: React.FC<ReservasViewProps> = ({
     });
   };
 
-  // PANTALLA DE ÉXITO (Ticket de Reserva Confirmada)
+  // PANTALLA DE ÉXITO (Ticket de Reserva Confirmada con Integración de Calendario)
   if (exito) {
+    const servicioParaConfirmar =
+      servicioActivo ||
+      servicios.find((s) => s.id === servicioSeleccionadoId) ||
+      servicios[0] || {
+        id: servicioSeleccionadoId || "default",
+        nombre: "Servicio Seleccionado",
+        descripcion: null,
+        duracionMin: 30,
+        precioCentavos: 0,
+      };
+
     return (
-      <div className="max-w-xl mx-auto my-8 sm:my-12 px-4">
-        <ACCard className="text-center p-6 sm:p-10 relative overflow-hidden">
-          <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto mb-5 ring-8 ring-emerald-50/50">
-            <CheckCircle2 className="w-9 h-9" />
-          </div>
-
-          <ACBadge variante="exito" className="mb-3">
-            Confirmada
-          </ACBadge>
-
-          <h2 className="text-2xl font-bold text-zinc-900 tracking-tight mb-2">
-            ¡Tu cita ha sido reservada!
-          </h2>
-          <p className="text-sm text-zinc-500 max-w-md mx-auto mb-6">
-            Hemos registrado tu reservación en <strong>{negocio.nombre}</strong>.
-            Enviamos los detalles de tu cita a <strong>{email}</strong>.
-          </p>
-
-          {/* Tarjeta tipo Pase / Ticket de Cita */}
-          <div className="bg-zinc-50 border border-zinc-200/90 rounded-2xl p-5 text-left mb-6 space-y-4">
-            <div className="flex justify-between items-start border-b border-zinc-200/70 pb-3">
-              <div>
-                <span className="text-[11px] uppercase font-bold text-zinc-400 tracking-wider">
-                  Servicio
-                </span>
-                <p className="text-base font-bold text-zinc-900 mt-0.5">
-                  {servicioActivo?.nombre}
-                </p>
-              </div>
-              <span className="text-sm font-extrabold text-zinc-900 bg-white px-3 py-1 rounded-lg border border-zinc-200 font-mono">
-                {formatearPrecio(servicioActivo?.precioCentavos || 0)}
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <span className="text-[11px] uppercase font-bold text-zinc-400 tracking-wider">
-                  Fecha
-                </span>
-                <p className="text-sm font-semibold text-zinc-800 capitalize mt-0.5">
-                  {formatearFechaLegible(fechaSeleccionada)}
-                </p>
-              </div>
-              <div>
-                <span className="text-[11px] uppercase font-bold text-zinc-400 tracking-wider">
-                  Horario
-                </span>
-                <p className="text-sm font-semibold text-zinc-800 mt-0.5">
-                  {slotSeleccionado} ({servicioActivo?.duracionMin} min)
-                </p>
-              </div>
-            </div>
-
-            <div className="pt-3 border-t border-zinc-200/60 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-zinc-600">
-              <div>
-                <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block">
-                  Cliente
-                </span>
-                <span className="font-semibold text-zinc-900">{nombre}</span>
-              </div>
-              {telefono && (
-                <div>
-                  <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block">
-                    Teléfono
-                  </span>
-                  <span>{telefono}</span>
-                </div>
-              )}
-            </div>
-
-            {notas && (
-              <div className="pt-3 border-t border-zinc-200/60 text-xs text-zinc-600">
-                <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider block mb-0.5">
-                  Notas
-                </span>
-                <p className="italic text-zinc-700 bg-white p-2.5 rounded-lg border border-zinc-200/70">
-                  {notas}
-                </p>
-              </div>
-            )}
-          </div>
-
-          <ACButton
-            onClick={() => {
-              setPaso(1);
-              setSlotSeleccionado("");
-              window.location.reload();
-            }}
-            variante="primario"
-            iconoIzquierda={<RotateCcw className="w-4 h-4" />}
-            className="w-full sm:w-auto"
-          >
-            Reservar otra cita
-          </ACButton>
-        </ACCard>
-      </div>
+      <ConfirmacionReserva
+        negocio={negocio}
+        servicio={servicioParaConfirmar}
+        fecha={fechaSeleccionada}
+        slot={slotSeleccionado}
+        cliente={{
+          nombre,
+          email,
+          telefono,
+          notas,
+        }}
+        codigoConfirmacion={codigoConfirmacion}
+        onNuevaReserva={() => {
+          setPaso(1);
+          setSlotSeleccionado("");
+          if (typeof window !== "undefined") {
+            window.location.reload();
+          }
+        }}
+      />
     );
   }
 
