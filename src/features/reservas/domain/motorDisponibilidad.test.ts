@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   calcularSlotsDisponibles,
   calcularSlotsDetallados,
+  evaluarDisponibilidadSlotEspecifico,
+  validarVentanaAnticipacion,
   horaAMinutos,
   minutosAHora,
   HorarioAtencionDia,
@@ -625,6 +627,215 @@ describe("Motor de Slots de Disponibilidad - Dominio Puro", () => {
       });
       expect(detallados[2].disponible).toBe(true);
       expect(detallados[3].disponible).toBe(true);
+    });
+  });
+
+  describe("9. Excepciones de fecha, feriados y bloqueos parciales intradía", () => {
+    const horarioRegular: HorarioAtencionDia = {
+      abre: "09:00",
+      cierra: "14:00",
+      activo: true,
+    };
+
+    it("anula todos los slots cuando excepcionFecha indica cierre completo por feriado", () => {
+      const slots = calcularSlotsDisponibles({
+        horarioAtencion: horarioRegular,
+        duracionServicioMin: 30,
+        excepcionFecha: {
+          cerradoCompleto: true,
+          motivo: "Día de la Independencia",
+        },
+      });
+
+      expect(slots).toEqual([]);
+    });
+
+    it("permite abrir en un día habitualmente inactivo mediante horario especial", () => {
+      const domingoCerrado: HorarioAtencionDia = {
+        abre: "09:00",
+        cierra: "14:00",
+        activo: false,
+      };
+
+      const slots = calcularSlotsDisponibles({
+        horarioAtencion: domingoCerrado,
+        duracionServicioMin: 60,
+        pasoMin: 60,
+        excepcionFecha: {
+          abreEspecial: "10:00",
+          cierraEspecial: "13:00",
+          motivo: "Apertura especial decembrina",
+        },
+      });
+
+      expect(slots).toEqual(["10:00", "11:00", "12:00"]);
+    });
+
+    it("excluye slots que chocan con bloqueos parciales o cuyo buffer los invade", () => {
+      const slots = calcularSlotsDisponibles({
+        horarioAtencion: { abre: "09:00", cierra: "13:00", activo: true },
+        duracionServicioMin: 30,
+        bufferPreparacionMin: { antesMin: 0, despuesMin: 15 },
+        pasoMin: 30,
+        bloqueosParciales: [
+          { inicio: "10:30", fin: "11:30", motivo: "Sanitización profunda" },
+        ],
+      });
+
+      expect(slots).toContain("09:00");
+      expect(slots).toContain("09:30");
+      // 10:00-10:30 + 15m limpieza (10:45) invade el bloqueo 10:30-11:30
+      expect(slots).not.toContain("10:00");
+      expect(slots).not.toContain("10:30");
+      expect(slots).not.toContain("11:00");
+      expect(slots).toContain("11:30");
+    });
+  });
+
+  describe("10. Buffers asimétricos individuales por cita y exclusión por ID", () => {
+    const horario: HorarioAtencionDia = {
+      abre: "09:00",
+      cierra: "13:00",
+      activo: true,
+    };
+
+    it("respeta buffers personalizados propios de citas ya agendadas", () => {
+      // Cita de colorimetría de 09:30 a 10:30 requiere 30m de limpieza propia (hasta 11:00)
+      const citas: CitaOcupada[] = [
+        {
+          id: "cita-color",
+          inicio: "09:30",
+          fin: "10:30",
+          bufferAntesMin: 15,
+          bufferDespuesMin: 30,
+        },
+      ];
+
+      const slots = calcularSlotsDisponibles({
+        horarioAtencion: horario,
+        duracionServicioMin: 30,
+        bufferPreparacionMin: 0,
+        citasExistentes: citas,
+        pasoMin: 30,
+      });
+
+      // 09:00-09:30 invadiría los 15m de preparación previa (09:15-09:30) de cita-color
+      expect(slots).not.toContain("09:00");
+      expect(slots).not.toContain("09:30");
+      expect(slots).not.toContain("10:00");
+      expect(slots).not.toContain("10:30"); // Ocupado por los 30m de limpieza post-cita
+      expect(slots).toContain("11:00");
+    });
+
+    it("ignora la cita indicada en excluirCitaId evitando auto-colisión", () => {
+      const citas: CitaOcupada[] = [
+        { id: "cita-actual", inicio: "10:00", fin: "11:00" },
+        { id: "cita-vecina", inicio: "11:30", fin: "12:00" },
+      ];
+
+      const slots = calcularSlotsDisponibles({
+        horarioAtencion: horario,
+        duracionServicioMin: 60,
+        citasExistentes: citas,
+        excluirCitaId: "cita-actual",
+        pasoMin: 30,
+      });
+
+      expect(slots).toContain("10:00");
+      expect(slots).toContain("10:30"); // 10:30 a 11:30 ahora es elegible sin chocar consigo misma
+      expect(slots).not.toContain("11:00"); // Choca con cita-vecina
+    });
+  });
+
+  describe("11. Ventanas de anticipación, horizonte máximo y cupo diario", () => {
+    const horario: HorarioAtencionDia = {
+      abre: "09:00",
+      cierra: "14:00",
+      activo: true,
+    };
+
+    it("filtra horarios del mismo día que no cumplen con anticipacionMinimaMin", () => {
+      // Ahora son las 09:40 UTC del 2026-10-22; anticipación mínima = 60 min (desde 10:40 en adelante)
+      const slots = calcularSlotsDisponibles({
+        horarioAtencion: horario,
+        duracionServicioMin: 30,
+        pasoMin: 30,
+        fechaObjetivo: "2026-10-22",
+        ahoraReferencia: new Date("2026-10-22T09:40:00Z"),
+        anticipacionMinimaMin: 60,
+      });
+
+      expect(slots).not.toContain("09:00");
+      expect(slots).not.toContain("10:00");
+      expect(slots).not.toContain("10:30");
+      expect(slots).toEqual(["11:00", "11:30", "12:00", "12:30", "13:00", "13:30"]);
+    });
+
+    it("bloquea fechas más allá de anticipacionMaximaDias", () => {
+      const check = validarVentanaAnticipacion({
+        fechaObjetivo: "2026-12-15",
+        slotInicioMin: 600,
+        ahoraReferencia: new Date("2026-10-22T09:00:00Z"),
+        anticipacionMaximaDias: 30,
+      });
+
+      expect(check.permitido).toBe(false);
+      expect(check.motivo).toBe("HORIZONTE_EXCEDIDO");
+    });
+
+    it("retorna vacío cuando se alcanza el límite operativo maxCitasDia", () => {
+      const slots = calcularSlotsDisponibles({
+        horarioAtencion: horario,
+        duracionServicioMin: 30,
+        maxCitasDia: 2,
+        citasExistentes: [
+          { inicio: "09:00", fin: "09:30", estado: "confirmada" },
+          { inicio: "10:00", fin: "10:30", estado: "confirmada" },
+          { inicio: "11:00", fin: "11:30", estado: "cancelada" },
+        ],
+      });
+
+      expect(slots).toEqual([]);
+    });
+  });
+
+  describe("12. Diagnóstico puntual con evaluarDisponibilidadSlotEspecifico", () => {
+    const horario: HorarioAtencionDia = {
+      abre: "09:00",
+      cierra: "15:00",
+      activo: true,
+    };
+
+    it("identifica la causa exacta de bloqueo o disponibilidad para cada horario", () => {
+      const paramsBase = {
+        horarioAtencion: horario,
+        duracionServicioMin: 30,
+        lunchBreak: { inicio: "13:00", fin: "14:00" },
+        bloqueosParciales: [{ inicio: "11:00", fin: "11:30", motivo: "Reunión staff" }],
+        citasExistentes: [{ inicio: "10:00", fin: "10:30" }],
+        fechaObjetivo: "2026-10-22",
+        ahoraReferencia: new Date("2026-10-22T08:45:00Z"),
+        anticipacionMinimaMin: 30,
+      };
+
+      expect(evaluarDisponibilidadSlotEspecifico("09:00", paramsBase).motivo).toBe(
+        "ANTICIPACION_INSUFICIENTE"
+      );
+      expect(evaluarDisponibilidadSlotEspecifico("09:30", paramsBase).motivo).toBe(
+        "DISPONIBLE"
+      );
+      expect(evaluarDisponibilidadSlotEspecifico("10:00", paramsBase).motivo).toBe(
+        "COLISION_CITA_O_BUFFER"
+      );
+      const diagBloqueo = evaluarDisponibilidadSlotEspecifico("11:00", paramsBase);
+      expect(diagBloqueo.motivo).toBe("BLOQUEO_PARCIAL");
+      expect(diagBloqueo.detalle).toBe("Reunión staff");
+      expect(evaluarDisponibilidadSlotEspecifico("13:00", paramsBase).motivo).toBe(
+        "EN_DESCANSO"
+      );
+      expect(evaluarDisponibilidadSlotEspecifico("14:45", paramsBase).motivo).toBe(
+        "FUERA_DE_JORNADA"
+      );
     });
   });
 });
