@@ -2,8 +2,9 @@
  * Motor de Generación y Cálculo de Slots de Disponibilidad
  *
  * Módulo puro de dominio para calcular horarios disponibles de atención,
- * considerando horarios de apertura/cierre, duración de servicio, descansos
- * (lunch break / pausas), buffers de preparación/limpieza y citas agendadas.
+ * considerando horarios de apertura/cierre, excepciones de calendario (feriados,
+ * horarios especiales, bloqueos parciales), duración de servicio, descansos,
+ * buffers asimétricos de preparación/limpieza, ventanas de anticipación y cupos diarios.
  */
 
 export interface HorarioAtencionDia {
@@ -17,10 +18,27 @@ export interface LunchBreak {
   fin: string; // Formato "HH:MM" (ej. "15:00")
 }
 
+export interface IntervaloBloqueo {
+  inicio: string; // Formato "HH:MM"
+  fin: string; // Formato "HH:MM"
+  motivo?: string;
+}
+
+export interface ExcepcionDisponibilidadDia {
+  cerradoCompleto?: boolean; // Feriado o cierre total en la fecha
+  abreEspecial?: string; // Sobrescribe hora de apertura si aplica
+  cierraEspecial?: string; // Sobrescribe hora de cierre si aplica
+  bloqueos?: IntervaloBloqueo[]; // Bloqueos parciales intradía
+  motivo?: string;
+}
+
 export interface CitaOcupada {
+  id?: string; // Identificador opcional (permite excluir auto-colisión al reprogramar)
   inicio: string | Date; // "HH:MM", ISO Date string o Date object
   fin: string | Date; // "HH:MM", ISO Date string o Date object
   estado?: string; // Si es "cancelada" o "cancelado", no bloquea
+  bufferAntesMin?: number; // Buffer propio previo de la cita ya agendada
+  bufferDespuesMin?: number; // Buffer propio posterior de la cita ya agendada
 }
 
 export interface BufferPreparacionConfig {
@@ -38,10 +56,18 @@ export interface CalcularSlotsParams {
   bufferMin?: number; // Alias
   lunchBreak?: LunchBreak | null;
   descansos?: LunchBreak[];
+  bloqueosParciales?: IntervaloBloqueo[];
+  excepcionFecha?: ExcepcionDisponibilidadDia | null;
   citasExistentes?: CitaOcupada[];
   citas?: CitaOcupada[]; // Alias
+  excluirCitaId?: string; // Ignora esta cita (útil para reprogramar sin auto-colisión)
   pasoMin?: number; // Intervalo de inicio entre slots (default: 30)
   bufferIncluidoEnJornada?: boolean; // Si true, el buffer post-servicio debe caber antes de cierra (default: false)
+  anticipacionMinimaMin?: number; // Minutos mínimos de anticipación respecto a ahoraReferencia
+  anticipacionMaximaDias?: number; // Horizonte máximo en días calendario respecto a ahoraReferencia
+  fechaObjetivo?: string; // Fecha del día consultado en formato "YYYY-MM-DD"
+  ahoraReferencia?: Date | string; // Instante actual de referencia para reglas de anticipación
+  maxCitasDia?: number; // Límite operativo opcional de citas activas permitidas en el día
 }
 
 export interface SlotDetallado {
@@ -50,6 +76,26 @@ export interface SlotDetallado {
   inicioMin: number;
   finMin: number;
   disponible: boolean;
+}
+
+export type MotivoEstadoSlot =
+  | "DISPONIBLE"
+  | "DIA_CERRADO"
+  | "FERIADO_BLOQUEADO"
+  | "FUERA_DE_JORNADA"
+  | "EN_DESCANSO"
+  | "BLOQUEO_PARCIAL"
+  | "COLISION_CITA_O_BUFFER"
+  | "ANTICIPACION_INSUFICIENTE"
+  | "HORIZONTE_EXCEDIDO"
+  | "CUPO_DIARIO_AGOTADO";
+
+export interface DiagnosticoSlot {
+  horaInicio: string;
+  horaFin: string;
+  disponible: boolean;
+  motivo: MotivoEstadoSlot;
+  detalle?: string;
 }
 
 /**
@@ -93,9 +139,374 @@ export function minutosAHora(minutos: number): string {
 }
 
 /**
+ * Evalúa si un slot en una fecha objetivo cumple con la ventana de anticipación
+ * mínima (en minutos) y máxima (en días calendario) respecto al instante de referencia.
+ */
+export function validarVentanaAnticipacion(params: {
+  fechaObjetivo?: string;
+  slotInicioMin: number;
+  ahoraReferencia?: Date | string;
+  anticipacionMinimaMin?: number;
+  anticipacionMaximaDias?: number;
+}): { permitido: boolean; motivo?: "ANTICIPACION_INSUFICIENTE" | "HORIZONTE_EXCEDIDO" } {
+  const {
+    fechaObjetivo,
+    slotInicioMin,
+    ahoraReferencia,
+    anticipacionMinimaMin,
+    anticipacionMaximaDias,
+  } = params;
+
+  if (!fechaObjetivo || !ahoraReferencia) {
+    return { permitido: true };
+  }
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fechaObjetivo.trim())) {
+    return { permitido: true };
+  }
+
+  const ahoraDate =
+    ahoraReferencia instanceof Date ? ahoraReferencia : new Date(ahoraReferencia);
+  if (isNaN(ahoraDate.getTime())) {
+    return { permitido: true };
+  }
+
+  const [anio, mes, dia] = fechaObjetivo.trim().split("-").map(Number);
+  const horasSlot = Math.floor(slotInicioMin / 60);
+  const minutosSlot = slotInicioMin % 60;
+
+  if (anticipacionMaximaDias !== undefined && anticipacionMaximaDias > 0) {
+    const inicioDiaObjetivoMs = Date.UTC(anio, mes - 1, dia);
+    const inicioDiaAhoraMs = Date.UTC(
+      ahoraDate.getUTCFullYear(),
+      ahoraDate.getUTCMonth(),
+      ahoraDate.getUTCDate()
+    );
+    const diasDiferencia = Math.floor(
+      (inicioDiaObjetivoMs - inicioDiaAhoraMs) / 86_400_000
+    );
+
+    if (diasDiferencia > anticipacionMaximaDias) {
+      return { permitido: false, motivo: "HORIZONTE_EXCEDIDO" };
+    }
+  }
+
+  if (anticipacionMinimaMin !== undefined && anticipacionMinimaMin >= 0) {
+    const slotUtcMs = Date.UTC(anio, mes - 1, dia, horasSlot, minutosSlot, 0, 0);
+    const diferenciaMin = (slotUtcMs - ahoraDate.getTime()) / 60_000;
+
+    if (diferenciaMin < anticipacionMinimaMin) {
+      return { permitido: false, motivo: "ANTICIPACION_INSUFICIENTE" };
+    }
+  }
+
+  return { permitido: true };
+}
+
+interface ContextoJornadaNormalizado {
+  cerradoPorFeriado: boolean;
+  motivoFeriado?: string;
+  cerradoRegular: boolean;
+  duracion: number;
+  paso: number;
+  jornadaInicio: number;
+  jornadaFin: number;
+  bufferAntes: number;
+  bufferDespues: number;
+  bufferEnJornada: boolean;
+  descansosMinutos: Array<{ inicioMin: number; finMin: number }>;
+  bloqueosMinutos: Array<{ inicioMin: number; finMin: number; motivo?: string }>;
+  citasBloqueantes: Array<{
+    inicioMin: number;
+    finMin: number;
+    efectivoInicioMin: number;
+    efectivoFinMin: number;
+  }>;
+  cupoDiarioAgotado: boolean;
+  fechaObjetivo?: string;
+  ahoraReferencia?: Date | string;
+  anticipacionMinimaMin?: number;
+  anticipacionMaximaDias?: number;
+}
+
+function construirContextoJornada(params: CalcularSlotsParams): ContextoJornadaNormalizado {
+  const horarioBase = params.horarioAtencion ?? params.horarioLaboral;
+  const excepcion = params.excepcionFecha;
+  const duracion =
+    params.duracionServicioMin ??
+    params.intervaloServicioMin ??
+    params.duracionMin ??
+    0;
+  const paso = params.pasoMin && params.pasoMin > 0 ? params.pasoMin : 30;
+  const bufferConfig = params.bufferPreparacionMin ?? params.bufferMin;
+  const bufferEnJornada = params.bufferIncluidoEnJornada ?? false;
+
+  let bufferAntes = 0;
+  let bufferDespues = 0;
+
+  if (typeof bufferConfig === "number") {
+    bufferDespues = Math.max(0, bufferConfig);
+  } else if (typeof bufferConfig === "object" && bufferConfig !== null) {
+    bufferAntes = Math.max(0, bufferConfig.antesMin ?? 0);
+    bufferDespues = Math.max(0, bufferConfig.despuesMin ?? 0);
+  }
+
+  if (excepcion?.cerradoCompleto) {
+    return {
+      cerradoPorFeriado: true,
+      motivoFeriado: excepcion.motivo,
+      cerradoRegular: false,
+      duracion,
+      paso,
+      jornadaInicio: 0,
+      jornadaFin: 0,
+      bufferAntes,
+      bufferDespues,
+      bufferEnJornada,
+      descansosMinutos: [],
+      bloqueosMinutos: [],
+      citasBloqueantes: [],
+      cupoDiarioAgotado: false,
+      fechaObjetivo: params.fechaObjetivo,
+      ahoraReferencia: params.ahoraReferencia,
+      anticipacionMinimaMin: params.anticipacionMinimaMin,
+      anticipacionMaximaDias: params.anticipacionMaximaDias,
+    };
+  }
+
+  const tieneHorarioEspecial = Boolean(
+    excepcion?.abreEspecial && excepcion?.cierraEspecial
+  );
+
+  if (!tieneHorarioEspecial && (!horarioBase || horarioBase.activo === false)) {
+    return {
+      cerradoPorFeriado: false,
+      cerradoRegular: true,
+      duracion,
+      paso,
+      jornadaInicio: 0,
+      jornadaFin: 0,
+      bufferAntes,
+      bufferDespues,
+      bufferEnJornada,
+      descansosMinutos: [],
+      bloqueosMinutos: [],
+      citasBloqueantes: [],
+      cupoDiarioAgotado: false,
+      fechaObjetivo: params.fechaObjetivo,
+      ahoraReferencia: params.ahoraReferencia,
+      anticipacionMinimaMin: params.anticipacionMinimaMin,
+      anticipacionMaximaDias: params.anticipacionMaximaDias,
+    };
+  }
+
+  const abreEfectivo = tieneHorarioEspecial
+    ? (excepcion?.abreEspecial as string)
+    : (horarioBase?.abre as string);
+  const cierraEfectivo = tieneHorarioEspecial
+    ? (excepcion?.cierraEspecial as string)
+    : (horarioBase?.cierra as string);
+
+  const jornadaInicio = horaAMinutos(abreEfectivo);
+  const jornadaFin = horaAMinutos(cierraEfectivo);
+
+  // Descansos (lunch break + descansos adicionales)
+  const descansosMinutos: Array<{ inicioMin: number; finMin: number }> = [];
+  if (params.lunchBreak) {
+    const iniL = horaAMinutos(params.lunchBreak.inicio);
+    const finL = horaAMinutos(params.lunchBreak.fin);
+    if (finL > iniL) {
+      descansosMinutos.push({ inicioMin: iniL, finMin: finL });
+    }
+  }
+  for (const d of params.descansos ?? []) {
+    const iniD = horaAMinutos(d.inicio);
+    const finD = horaAMinutos(d.fin);
+    if (finD > iniD) {
+      descansosMinutos.push({ inicioMin: iniD, finMin: finD });
+    }
+  }
+
+  // Bloqueos parciales intradía (directos + provenientes de excepción de fecha)
+  const bloqueosMinutos: Array<{ inicioMin: number; finMin: number; motivo?: string }> = [];
+  const listaBloqueos = [
+    ...(params.bloqueosParciales ?? []),
+    ...(excepcion?.bloqueos ?? []),
+  ];
+  for (const b of listaBloqueos) {
+    const iniB = horaAMinutos(b.inicio);
+    const finB = horaAMinutos(b.fin);
+    if (finB > iniB) {
+      bloqueosMinutos.push({ inicioMin: iniB, finMin: finB, motivo: b.motivo });
+    }
+  }
+
+  // Citas existentes activas (excluyendo canceladas y excluirCitaId)
+  const citasCrudas = params.citasExistentes ?? params.citas ?? [];
+  const citasBloqueantes: ContextoJornadaNormalizado["citasBloqueantes"] = [];
+
+  for (const c of citasCrudas) {
+    if (params.excluirCitaId && c.id && c.id === params.excluirCitaId) {
+      continue;
+    }
+
+    const estado = c.estado ? c.estado.toLowerCase().trim() : "confirmada";
+    if (estado === "cancelada" || estado === "cancelado") {
+      continue;
+    }
+
+    const iniC = horaAMinutos(c.inicio);
+    const finC = horaAMinutos(c.fin);
+
+    if (finC > iniC) {
+      const bufAntesCita =
+        c.bufferAntesMin !== undefined ? Math.max(0, c.bufferAntesMin) : bufferAntes;
+      const bufDespuesCita =
+        c.bufferDespuesMin !== undefined
+          ? Math.max(0, c.bufferDespuesMin)
+          : bufferDespues;
+
+      citasBloqueantes.push({
+        inicioMin: iniC,
+        finMin: finC,
+        efectivoInicioMin: iniC - bufAntesCita,
+        efectivoFinMin: finC + bufDespuesCita,
+      });
+    }
+  }
+
+  const cupoDiarioAgotado =
+    params.maxCitasDia !== undefined &&
+    params.maxCitasDia > 0 &&
+    citasBloqueantes.length >= params.maxCitasDia;
+
+  return {
+    cerradoPorFeriado: false,
+    cerradoRegular: jornadaInicio >= jornadaFin,
+    duracion,
+    paso,
+    jornadaInicio,
+    jornadaFin,
+    bufferAntes,
+    bufferDespues,
+    bufferEnJornada,
+    descansosMinutos,
+    bloqueosMinutos,
+    citasBloqueantes,
+    cupoDiarioAgotado,
+    fechaObjetivo: params.fechaObjetivo,
+    ahoraReferencia: params.ahoraReferencia,
+    anticipacionMinimaMin: params.anticipacionMinimaMin,
+    anticipacionMaximaDias: params.anticipacionMaximaDias,
+  };
+}
+
+function evaluarSlotEnContexto(
+  slotInicio: number,
+  ctx: ContextoJornadaNormalizado
+): { disponible: boolean; motivo: MotivoEstadoSlot; detalle?: string } {
+  if (ctx.cerradoPorFeriado) {
+    return {
+      disponible: false,
+      motivo: "FERIADO_BLOQUEADO",
+      detalle: ctx.motivoFeriado,
+    };
+  }
+
+  if (ctx.cerradoRegular || ctx.duracion <= 0) {
+    return { disponible: false, motivo: "DIA_CERRADO" };
+  }
+
+  if (ctx.cupoDiarioAgotado) {
+    return { disponible: false, motivo: "CUPO_DIARIO_AGOTADO" };
+  }
+
+  const slotFin = slotInicio + ctx.duracion;
+  const slotInicioConBuffer = slotInicio - ctx.bufferAntes;
+  const slotFinConBuffer = slotFin + ctx.bufferDespues;
+
+  if (
+    slotInicio < ctx.jornadaInicio ||
+    slotFin > ctx.jornadaFin ||
+    slotInicioConBuffer < ctx.jornadaInicio ||
+    (ctx.bufferEnJornada && slotFinConBuffer > ctx.jornadaFin)
+  ) {
+    return { disponible: false, motivo: "FUERA_DE_JORNADA" };
+  }
+
+  // Ventana de anticipación mínima y horizonte máximo
+  const checkAnticipacion = validarVentanaAnticipacion({
+    fechaObjetivo: ctx.fechaObjetivo,
+    slotInicioMin: slotInicio,
+    ahoraReferencia: ctx.ahoraReferencia,
+    anticipacionMinimaMin: ctx.anticipacionMinimaMin,
+    anticipacionMaximaDias: ctx.anticipacionMaximaDias,
+  });
+
+  if (!checkAnticipacion.permitido && checkAnticipacion.motivo) {
+    return { disponible: false, motivo: checkAnticipacion.motivo };
+  }
+
+  // Colisión con descansos (lunch break / pausas)
+  const chocaConDescanso = ctx.descansosMinutos.some(
+    (pausa) =>
+      slotInicioConBuffer < pausa.finMin && slotFinConBuffer > pausa.inicioMin
+  );
+  if (chocaConDescanso) {
+    return { disponible: false, motivo: "EN_DESCANSO" };
+  }
+
+  // Colisión con bloqueos parciales intradía
+  const bloqueoColisionado = ctx.bloqueosMinutos.find(
+    (b) => slotInicioConBuffer < b.finMin && slotFinConBuffer > b.inicioMin
+  );
+  if (bloqueoColisionado) {
+    return {
+      disponible: false,
+      motivo: "BLOQUEO_PARCIAL",
+      detalle: bloqueoColisionado.motivo,
+    };
+  }
+
+  // Colisión con citas existentes y sus buffers asimétricos
+  const chocaConCita = ctx.citasBloqueantes.some(
+    (cita) =>
+      slotInicioConBuffer < cita.efectivoFinMin &&
+      slotFinConBuffer > cita.efectivoInicioMin
+  );
+  if (chocaConCita) {
+    return { disponible: false, motivo: "COLISION_CITA_O_BUFFER" };
+  }
+
+  return { disponible: true, motivo: "DISPONIBLE" };
+}
+
+/**
+ * Evalúa diagnósticamente un horario puntual ("HH:MM") devolviendo si es reservable
+ * y la causa exacta de dominio en caso de bloqueo.
+ */
+export function evaluarDisponibilidadSlotEspecifico(
+  horaSlot: string,
+  params: CalcularSlotsParams
+): DiagnosticoSlot {
+  const ctx = construirContextoJornada(params);
+  const slotInicio = horaAMinutos(horaSlot);
+  const duracionSegura = Math.max(0, ctx.duracion);
+  const resultado = evaluarSlotEnContexto(slotInicio, ctx);
+
+  return {
+    horaInicio: minutosAHora(slotInicio),
+    horaFin: minutosAHora(slotInicio + duracionSegura),
+    disponible: resultado.disponible,
+    motivo: resultado.motivo,
+    detalle: resultado.detalle,
+  };
+}
+
+/**
  * Función pura que calcula los slots de horarios disponibles para un día dado,
- * excluyendo colisiones con citas previas, descansos (lunch break) y respetando
- * el buffer de preparación y límites de jornada laboral.
+ * excluyendo colisiones con citas previas, descansos, bloqueos parciales, feriados,
+ * ventanas de anticipación y respetando buffers asimétricos y límites de jornada.
  */
 export function calcularSlotsDisponibles(params: CalcularSlotsParams): string[];
 export function calcularSlotsDisponibles(
@@ -114,16 +525,6 @@ export function calcularSlotsDisponibles(
   citasExistentesArg?: CitaOcupada[],
   pasoMinArg?: number
 ): string[] {
-  // Normalizar parámetros según firma (objeto vs argumentos posicionales)
-  let horario: HorarioAtencionDia | null | undefined;
-  let duracion = 0;
-  let bufferConfig: number | BufferPreparacionConfig | undefined;
-  let lunch: LunchBreak | null | undefined;
-  let pausasAdicionales: LunchBreak[] = [];
-  let citas: CitaOcupada[] = [];
-  let paso = 30;
-  let bufferEnJornada = false;
-
   const esObjetoParams =
     paramsOPrimerArg !== null &&
     typeof paramsOPrimerArg === "object" &&
@@ -132,149 +533,44 @@ export function calcularSlotsDisponibles(
       "intervaloServicioMin" in paramsOPrimerArg ||
       "duracionMin" in paramsOPrimerArg ||
       "horarioAtencion" in paramsOPrimerArg ||
-      "horarioLaboral" in paramsOPrimerArg);
+      "horarioLaboral" in paramsOPrimerArg ||
+      "excepcionFecha" in paramsOPrimerArg);
 
-  if (esObjetoParams) {
-    const p = paramsOPrimerArg as CalcularSlotsParams;
-    horario = p.horarioAtencion ?? p.horarioLaboral;
-    duracion = p.duracionServicioMin ?? p.intervaloServicioMin ?? p.duracionMin ?? 0;
-    bufferConfig = p.bufferPreparacionMin ?? p.bufferMin;
-    lunch = p.lunchBreak;
-    pausasAdicionales = p.descansos ?? [];
-    citas = p.citasExistentes ?? p.citas ?? [];
-    paso = p.pasoMin && p.pasoMin > 0 ? p.pasoMin : 30;
-    bufferEnJornada = p.bufferIncluidoEnJornada ?? false;
-  } else {
-    horario = paramsOPrimerArg as HorarioAtencionDia | null | undefined;
-    duracion = duracionServicioMinArg ?? 0;
-    bufferConfig = bufferPreparacionMinArg;
-    lunch = lunchBreakArg;
-    citas = citasExistentesArg ?? [];
-    paso = pasoMinArg && pasoMinArg > 0 ? pasoMinArg : 30;
-    bufferEnJornada = false;
-  }
+  const paramsNormalizados: CalcularSlotsParams = esObjetoParams
+    ? (paramsOPrimerArg as CalcularSlotsParams)
+    : {
+        horarioAtencion: paramsOPrimerArg as HorarioAtencionDia | null | undefined,
+        duracionServicioMin: duracionServicioMinArg ?? 0,
+        bufferPreparacionMin: bufferPreparacionMinArg,
+        lunchBreak: lunchBreakArg,
+        citasExistentes: citasExistentesArg ?? [],
+        pasoMin: pasoMinArg && pasoMinArg > 0 ? pasoMinArg : 30,
+        bufferIncluidoEnJornada: false,
+      };
 
-  // 1. Validar si el día está cerrado o datos insuficientes
-  if (!horario || horario.activo === false) {
+  const ctx = construirContextoJornada(paramsNormalizados);
+
+  if (
+    ctx.cerradoPorFeriado ||
+    ctx.cerradoRegular ||
+    ctx.duracion <= 0 ||
+    ctx.cupoDiarioAgotado ||
+    ctx.duracion > ctx.jornadaFin - ctx.jornadaInicio
+  ) {
     return [];
   }
 
-  if (duracion <= 0) {
-    return [];
-  }
-
-  const jornadaInicio = horaAMinutos(horario.abre);
-  const jornadaFin = horaAMinutos(horario.cierra);
-
-  // Si el horario de apertura es posterior o igual al de cierre, no hay jornada
-  if (jornadaInicio >= jornadaFin) {
-    return [];
-  }
-
-  // Si la duración requerida excede la jornada completa, no hay slots posibles
-  if (duracion > jornadaFin - jornadaInicio) {
-    return [];
-  }
-
-  // 2. Descomponer buffer de preparación
-  let bufferAntes = 0;
-  let bufferDespues = 0;
-
-  if (typeof bufferConfig === "number") {
-    bufferDespues = Math.max(0, bufferConfig);
-  } else if (typeof bufferConfig === "object" && bufferConfig !== null) {
-    bufferAntes = Math.max(0, bufferConfig.antesMin ?? 0);
-    bufferDespues = Math.max(0, bufferConfig.despuesMin ?? 0);
-  }
-
-  // 3. Normalizar pausas y descansos (Lunch break)
-  const descansosMinutos: Array<{ inicioMin: number; finMin: number }> = [];
-
-  if (lunch) {
-    const iniL = horaAMinutos(lunch.inicio);
-    const finL = horaAMinutos(lunch.fin);
-    if (finL > iniL) {
-      descansosMinutos.push({ inicioMin: iniL, finMin: finL });
-    }
-  }
-
-  for (const d of pausasAdicionales) {
-    const iniD = horaAMinutos(d.inicio);
-    const finD = horaAMinutos(d.fin);
-    if (finD > iniD) {
-      descansosMinutos.push({ inicioMin: iniD, finMin: finD });
-    }
-  }
-
-  // 4. Normalizar citas existentes activas (excluir canceladas)
-  const citasBloqueantes: Array<{ inicioMin: number; finMin: number }> = [];
-
-  for (const c of citas) {
-    const estado = c.estado ? c.estado.toLowerCase().trim() : "confirmada";
-    if (estado === "cancelada" || estado === "cancelado") {
-      continue;
-    }
-
-    const iniC = horaAMinutos(c.inicio);
-    const finC = horaAMinutos(c.fin);
-
-    if (finC > iniC) {
-      citasBloqueantes.push({ inicioMin: iniC, finMin: finC });
-    }
-  }
-
-  // 5. Generar slots evaluando colisiones
   const slotsValidos: string[] = [];
 
   for (
-    let actual = jornadaInicio;
-    actual + duracion <= jornadaFin;
-    actual += paso
+    let actual = ctx.jornadaInicio;
+    actual + ctx.duracion <= ctx.jornadaFin;
+    actual += ctx.paso
   ) {
-    const slotInicio = actual;
-    const slotFin = slotInicio + duracion;
-
-    // A) Verificar buffer anterior con apertura de jornada
-    const slotInicioConBuffer = slotInicio - bufferAntes;
-    if (slotInicioConBuffer < jornadaInicio) {
-      continue;
+    const evalSlot = evaluarSlotEnContexto(actual, ctx);
+    if (evalSlot.disponible) {
+      slotsValidos.push(minutosAHora(actual));
     }
-
-    // B) Verificar buffer posterior con cierre de jornada (si está configurado exigirlo dentro)
-    const slotFinConBuffer = slotFin + bufferDespues;
-    if (bufferEnJornada && slotFinConBuffer > jornadaFin) {
-      continue;
-    }
-
-    // C) Verificar colisión con descansos / lunch break
-    // El servicio (y su buffer necesario) no puede solaparse con el descanso
-    const chocaConDescanso = descansosMinutos.some((pausa) => {
-      return (
-        slotInicioConBuffer < pausa.finMin && slotFinConBuffer > pausa.inicioMin
-      );
-    });
-
-    if (chocaConDescanso) {
-      continue;
-    }
-
-    // D) Verificar colisión con citas agendadas
-    // Conflicto: la ventana [slotInicio - bufferAntes, slotFin + bufferDespues]
-    // no puede solaparse con la cita [cita.inicioMin, cita.finMin + bufferDespues].
-    const chocaConCita = citasBloqueantes.some((cita) => {
-      const citaEfectivaFin = cita.finMin + bufferDespues;
-      const citaEfectivaInicio = cita.inicioMin - bufferAntes;
-
-      return (
-        slotInicio < citaEfectivaFin && slotFinConBuffer > citaEfectivaInicio
-      );
-    });
-
-    if (chocaConCita) {
-      continue;
-    }
-
-    slotsValidos.push(minutosAHora(slotInicio));
   }
 
   return slotsValidos;
@@ -287,35 +583,31 @@ export function calcularSlotsDisponibles(
 export function calcularSlotsDetallados(
   params: CalcularSlotsParams
 ): SlotDetallado[] {
-  const horario = params.horarioAtencion ?? params.horarioLaboral;
-  const duracion =
-    params.duracionServicioMin ??
-    params.intervaloServicioMin ??
-    params.duracionMin ??
-    0;
+  const ctx = construirContextoJornada(params);
 
-  if (!horario || horario.activo === false || duracion <= 0) {
+  if (
+    ctx.cerradoPorFeriado ||
+    ctx.cerradoRegular ||
+    ctx.duracion <= 0 ||
+    ctx.duracion > ctx.jornadaFin - ctx.jornadaInicio
+  ) {
     return [];
   }
-
-  const jornadaInicio = horaAMinutos(horario.abre);
-  const jornadaFin = horaAMinutos(horario.cierra);
-  const paso = params.pasoMin && params.pasoMin > 0 ? params.pasoMin : 30;
 
   const disponiblesSet = new Set(calcularSlotsDisponibles(params));
   const detallados: SlotDetallado[] = [];
 
   for (
-    let actual = jornadaInicio;
-    actual + duracion <= jornadaFin;
-    actual += paso
+    let actual = ctx.jornadaInicio;
+    actual + ctx.duracion <= ctx.jornadaFin;
+    actual += ctx.paso
   ) {
     const horaInicio = minutosAHora(actual);
     detallados.push({
       horaInicio,
-      horaFin: minutosAHora(actual + duracion),
+      horaFin: minutosAHora(actual + ctx.duracion),
       inicioMin: actual,
-      finMin: actual + duracion,
+      finMin: actual + ctx.duracion,
       disponible: disponiblesSet.has(horaInicio),
     });
   }
