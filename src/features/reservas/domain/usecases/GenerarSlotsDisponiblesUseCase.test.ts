@@ -91,6 +91,13 @@ describe("GenerarSlotsDisponiblesUseCase", () => {
       maxCitasDia: 0,
     });
     expect(resCupoInvalido.failure?.tipo).toBe("DATOS_INVALIDOS");
+
+    const resBufferEscalarNegativo = await useCase.execute({
+      horarioAtencion: horarioValido,
+      duracionServicioMin: 30,
+      bufferMin: -10,
+    });
+    expect(resBufferEscalarNegativo.failure?.tipo).toBe("DATOS_INVALIDOS");
   });
 
   it("retorna lista vacía { data: [] } si el día está cerrado o no hay horario de atención", async () => {
@@ -127,6 +134,17 @@ describe("GenerarSlotsDisponiblesUseCase", () => {
     expect(resConFailure.failure?.tipo).toBe("FECHA_BLOQUEADA");
     expect(resConFailure.failure?.mensajeUsuario).toContain("Navidad");
 
+    const resSinMotivo = await useCase.execute({
+      horarioAtencion: horarioValido,
+      duracionServicioMin: 30,
+      excepcionFecha: {
+        cerradoCompleto: true,
+      },
+      retornarFailureEnBloqueo: true,
+    });
+    expect(resSinMotivo.failure?.tipo).toBe("FECHA_BLOQUEADA");
+    expect(resSinMotivo.failure?.mensajeUsuario).toContain("feriado o bloqueo especial");
+
     const resSilencioso = await useCase.execute({
       horarioAtencion: horarioValido,
       duracionServicioMin: 30,
@@ -137,6 +155,91 @@ describe("GenerarSlotsDisponiblesUseCase", () => {
     });
     expect(resSilencioso.failure).toBeUndefined();
     expect(resSilencioso.data).toEqual([]);
+  });
+
+  it("respeta bloqueos parciales intradía combinados con buffers asimétricos y borde de jornada", async () => {
+    const useCase = new GenerarSlotsDisponiblesUseCase();
+
+    const resultado = await useCase.execute({
+      horarioAtencion: { abre: "09:00", cierra: "13:00", activo: true },
+      duracionServicioMin: 30,
+      pasoMin: 30,
+      bufferPreparacionMin: { antesMin: 15, despuesMin: 15 },
+      bufferIncluidoEnJornada: true,
+      bloqueosParciales: [
+        { inicio: "10:30", fin: "11:00", motivo: "Sanitización de cabina" },
+      ],
+      excepcionFecha: {
+        bloqueos: [{ inicio: "12:00", fin: "12:30", motivo: "Reunión operativa" }],
+      },
+    });
+
+    expect(resultado.failure).toBeUndefined();
+    // 09:00 rechazado porque antesMin=15 requiere iniciar prep a las 08:45 (< 09:00)
+    // 09:30 (prep 09:15, fin+limpieza 10:15) -> válido
+    // 10:00 (fin+limpieza 10:45) -> choca con bloqueo 10:30-11:00
+    // 10:30 -> choca con bloqueo 10:30-11:00
+    // 11:00 (prep 10:45) -> choca con bloqueo 10:30-11:00
+    // 11:15 no es múltiplo de paso 30; 11:30 (prep 11:15, fin+limpieza 12:15) -> choca con bloqueo 12:00-12:30
+    // 12:30 (prep 12:15, fin+limpieza 13:15 > 13:00) -> rechazado
+    expect(resultado.data).toEqual(["09:30"]);
+  });
+
+  it("filtra fechas fuera del horizonte máximo de anticipación y permite el día límite exacto", async () => {
+    const useCase = new GenerarSlotsDisponiblesUseCase();
+    const ahora = new Date("2026-10-01T08:00:00Z");
+
+    const dentroHorizonte = await useCase.execute({
+      horarioAtencion: { abre: "09:00", cierra: "11:00", activo: true },
+      duracionServicioMin: 60,
+      pasoMin: 60,
+      fecha: "2026-10-15", // Exactamente +14 días usando fallback de input.fecha
+      ahoraReferencia: ahora,
+      anticipacionMaximaDias: 14,
+    });
+    expect(dentroHorizonte.failure).toBeUndefined();
+    expect(dentroHorizonte.data).toEqual(["09:00", "10:00"]);
+
+    const fueraHorizonte = await useCase.execute({
+      horarioAtencion: { abre: "09:00", cierra: "11:00", activo: true },
+      duracionServicioMin: 60,
+      pasoMin: 60,
+      fecha: "2026-10-16", // +15 días > 14
+      ahoraReferencia: ahora,
+      anticipacionMaximaDias: 14,
+    });
+    expect(fueraHorizonte.failure).toBeUndefined();
+    expect(fueraHorizonte.data).toEqual([]);
+  });
+
+  it("evalúa cupo diario maxCitasDia ignorando citas canceladas y excluirCitaId al reprogramar", async () => {
+    const useCase = new GenerarSlotsDisponiblesUseCase();
+    const citasDia: CitaOcupada[] = [
+      { id: "cita-1", inicio: "09:00", fin: "10:00", estado: "confirmada" },
+      { id: "cita-2", inicio: "10:00", fin: "11:00", estado: "confirmada" },
+      { id: "cita-cancelada", inicio: "11:00", fin: "12:00", estado: "cancelada" },
+    ];
+
+    // Con maxCitasDia = 2 y 2 citas activas, para una reserva nueva el cupo está agotado
+    const bloqueadoPorCupo = await useCase.execute({
+      horarioAtencion: horarioValido,
+      duracionServicioMin: 60,
+      pasoMin: 60,
+      citasExistentes: citasDia,
+      maxCitasDia: 2,
+    });
+    expect(bloqueadoPorCupo.data).toEqual([]);
+
+    // Si estamos reprogramando "cita-2", excluirCitaId deja solo 1 cita bloqueante (< 2) y libera 10:00-13:00
+    const disponibleParaReprogramar = await useCase.execute({
+      horarioAtencion: horarioValido,
+      duracionServicioMin: 60,
+      pasoMin: 60,
+      citasExistentes: citasDia,
+      excluirCitaId: "cita-2",
+      maxCitasDia: 2,
+    });
+    expect(disponibleParaReprogramar.data).toEqual(["10:00", "11:00", "12:00"]);
   });
 
   it("aplica horario especial en día cerrado y ventana de anticipación mínima", async () => {
