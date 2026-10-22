@@ -31,3 +31,39 @@ export interface HorarioDiaConfig {
   cierre: string;    // "18:00"
   receso?: RecesoConfig; // Intervalo de descanso (lunch break)
 }
+
+export type TipoExcepcionCalendario =
+  | "feriado_cerrado"
+  | "horario_especial"
+  | "bloqueo_parcial";
+
+export interface ExcepcionCalendario {
+  id: string;
+  negocioId: string;
+  fecha: string; // Formato "YYYY-MM-DD"
+  tipo: TipoExcepcionCalendario;
+  motivo: string;
+  recurrenteAnual?: boolean; // Si es true, aplica cada año en el mismo MM-DD
+  aperturaEspecial?: string; // Requerido si tipo === "horario_especial"
+  cierreEspecial?: string;   // Requerido si tipo === "horario_especial"
+  bloqueoInicio?: string;    // Requerido si tipo === "bloqueo_parcial"
+  bloqueoFin?: string;       // Requerido si tipo === "bloqueo_parcial"
+}
+
+export type OrigenHorarioEfectivo =
+  | "horario_semanal"
+  | "feriado_cerrado"
+  | "horario_especial"
+  | "dia_inactivo";
+
+export interface HorarioEfectivoFecha {
+  fecha: string;
+  diaSemana: number;
+  abierto: boolean;
+  apertura: string | null;
+  cierre: string | null;
+  receso: IntervaloHorario | null;
+  bloqueosParciales: IntervaloHorario[];
+  motivoExcepcion?: string;
+  origen: OrigenHorarioEfectivo;
+}
