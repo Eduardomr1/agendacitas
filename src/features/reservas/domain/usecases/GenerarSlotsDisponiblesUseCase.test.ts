@@ -1,5 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
-import { GenerarSlotsDisponiblesUseCase } from "./GenerarSlotsDisponiblesUseCase";
+import {
+  GenerarSlotsDisponiblesUseCase,
+  GenerarSlotsInput,
+} from "./GenerarSlotsDisponiblesUseCase";
 import { IReservasRepository } from "../repositories";
 import { HorarioAtencionDia, LunchBreak, CitaOcupada } from "../motorDisponibilidad";
 
@@ -36,9 +39,10 @@ describe("GenerarSlotsDisponiblesUseCase", () => {
   it("retorna failure DATOS_INVALIDOS si la duración del servicio es nula, indefinida o <= 0", async () => {
     const useCase = new GenerarSlotsDisponiblesUseCase();
 
-    const resIndefinida = await useCase.execute({
+    const inputSinDuracion: GenerarSlotsInput = {
       horarioAtencion: horarioValido,
-    } as any);
+    };
+    const resIndefinida = await useCase.execute(inputSinDuracion);
     expect(resIndefinida.failure).toBeDefined();
     expect(resIndefinida.failure?.tipo).toBe("DATOS_INVALIDOS");
 
@@ -57,17 +61,36 @@ describe("GenerarSlotsDisponiblesUseCase", () => {
     expect(resNegativa.failure?.tipo).toBe("DATOS_INVALIDOS");
   });
 
-  it("retorna failure DATOS_INVALIDOS si pasoMin es menor o igual a cero", async () => {
+  it("retorna failure DATOS_INVALIDOS si pasoMin, buffers o anticipacionMinimaMin son inválidos", async () => {
     const useCase = new GenerarSlotsDisponiblesUseCase();
 
-    const resultado = await useCase.execute({
+    const resPaso = await useCase.execute({
       horarioAtencion: horarioValido,
       duracionServicioMin: 30,
       pasoMin: -5,
     });
+    expect(resPaso.failure?.tipo).toBe("DATOS_INVALIDOS");
 
-    expect(resultado.failure).toBeDefined();
-    expect(resultado.failure?.tipo).toBe("DATOS_INVALIDOS");
+    const resBufferNegativo = await useCase.execute({
+      horarioAtencion: horarioValido,
+      duracionServicioMin: 30,
+      bufferPreparacionMin: { antesMin: -10, despuesMin: 5 },
+    });
+    expect(resBufferNegativo.failure?.tipo).toBe("DATOS_INVALIDOS");
+
+    const resAnticipacionNegativa = await useCase.execute({
+      horarioAtencion: horarioValido,
+      duracionServicioMin: 30,
+      anticipacionMinimaMin: -30,
+    });
+    expect(resAnticipacionNegativa.failure?.tipo).toBe("DATOS_INVALIDOS");
+
+    const resCupoInvalido = await useCase.execute({
+      horarioAtencion: horarioValido,
+      duracionServicioMin: 30,
+      maxCitasDia: 0,
+    });
+    expect(resCupoInvalido.failure?.tipo).toBe("DATOS_INVALIDOS");
   });
 
   it("retorna lista vacía { data: [] } si el día está cerrado o no hay horario de atención", async () => {
@@ -86,6 +109,56 @@ describe("GenerarSlotsDisponiblesUseCase", () => {
     });
     expect(resInactivo.failure).toBeUndefined();
     expect(resInactivo.data).toEqual([]);
+  });
+
+  it("maneja excepciones de feriado con FECHA_BLOQUEADA cuando retornarFailureEnBloqueo es true", async () => {
+    const useCase = new GenerarSlotsDisponiblesUseCase();
+
+    const resConFailure = await useCase.execute({
+      horarioAtencion: horarioValido,
+      duracionServicioMin: 30,
+      excepcionFecha: {
+        cerradoCompleto: true,
+        motivo: "Navidad",
+      },
+      retornarFailureEnBloqueo: true,
+    });
+
+    expect(resConFailure.failure?.tipo).toBe("FECHA_BLOQUEADA");
+    expect(resConFailure.failure?.mensajeUsuario).toContain("Navidad");
+
+    const resSilencioso = await useCase.execute({
+      horarioAtencion: horarioValido,
+      duracionServicioMin: 30,
+      excepcionFecha: {
+        cerradoCompleto: true,
+        motivo: "Navidad",
+      },
+    });
+    expect(resSilencioso.failure).toBeUndefined();
+    expect(resSilencioso.data).toEqual([]);
+  });
+
+  it("aplica horario especial en día cerrado y ventana de anticipación mínima", async () => {
+    const useCase = new GenerarSlotsDisponiblesUseCase();
+
+    const resultado = await useCase.execute({
+      horarioAtencion: { abre: "09:00", cierra: "14:00", activo: false },
+      duracionServicioMin: 60,
+      pasoMin: 60,
+      excepcionFecha: {
+        abreEspecial: "10:00",
+        cierraEspecial: "14:00",
+        motivo: "Domingo especial",
+      },
+      fechaObjetivo: "2026-10-25",
+      ahoraReferencia: new Date("2026-10-25T10:15:00Z"),
+      anticipacionMinimaMin: 45,
+    });
+
+    expect(resultado.failure).toBeUndefined();
+    // 10:00 ya pasó (10:15 + 45m = desde 11:00 en adelante)
+    expect(resultado.data).toEqual(["11:00", "12:00", "13:00"]);
   });
 
   it("filtra colisiones con descanso (lunch break) y citas existentes", async () => {
@@ -125,12 +198,9 @@ describe("GenerarSlotsDisponiblesUseCase", () => {
 
     expect(resultado.failure).toBeUndefined();
     expect(resultado.data).toBeDefined();
-    // 09:00 (duración 60m + 15m buffer = hasta 10:15, choca con cita de las 10:00) -> bloqueado
     expect(resultado.data).not.toContain("09:00");
     expect(resultado.data).not.toContain("10:00");
-    // Cita 10:00-11:00 con 15m buffer termina 11:15
     expect(resultado.data).not.toContain("11:00");
-    // 11:30 a 12:30 -> disponible
     expect(resultado.data).toContain("11:30");
   });
 

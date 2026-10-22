@@ -6,6 +6,8 @@ import {
   LunchBreak,
   CitaOcupada,
   BufferPreparacionConfig,
+  IntervaloBloqueo,
+  ExcepcionDisponibilidadDia,
 } from "../motorDisponibilidad";
 
 export interface GenerarSlotsInput {
@@ -19,10 +21,19 @@ export interface GenerarSlotsInput {
   bufferMin?: number; // Alias
   lunchBreak?: LunchBreak | null;
   descansos?: LunchBreak[];
+  bloqueosParciales?: IntervaloBloqueo[];
+  excepcionFecha?: ExcepcionDisponibilidadDia | null;
   citasExistentes?: CitaOcupada[];
   citas?: CitaOcupada[]; // Alias
+  excluirCitaId?: string;
   pasoMin?: number;
   bufferIncluidoEnJornada?: boolean;
+  anticipacionMinimaMin?: number;
+  anticipacionMaximaDias?: number;
+  fechaObjetivo?: string;
+  ahoraReferencia?: Date | string;
+  maxCitasDia?: number;
+  retornarFailureEnBloqueo?: boolean;
 
   // Parámetros opcionales para consulta delegada en repositorio
   negocioId?: string;
@@ -69,7 +80,7 @@ export class GenerarSlotsDisponiblesUseCase {
       };
     }
 
-    // 3. Validar paso si se especifica
+    // 3. Validar paso, buffers, anticipación y cupo diario si se especifican
     if (input.pasoMin !== undefined && input.pasoMin <= 0) {
       return {
         failure: crearFailure(
@@ -79,22 +90,91 @@ export class GenerarSlotsDisponiblesUseCase {
       };
     }
 
-    // 4. Verificar horario del día
-    const horario = input.horarioAtencion ?? input.horarioLaboral;
-    if (!horario || horario.activo === false) {
-      return { data: [] }; // Día no laborable / cerrado
+    const bufferEvaluado = input.bufferPreparacionMin ?? input.bufferMin;
+    if (typeof bufferEvaluado === "number" && bufferEvaluado < 0) {
+      return {
+        failure: crearFailure(
+          "DATOS_INVALIDOS",
+          "El tiempo de buffer o preparación no puede ser negativo."
+        ),
+      };
+    }
+    if (
+      typeof bufferEvaluado === "object" &&
+      bufferEvaluado !== null &&
+      ((bufferEvaluado.antesMin !== undefined && bufferEvaluado.antesMin < 0) ||
+        (bufferEvaluado.despuesMin !== undefined && bufferEvaluado.despuesMin < 0))
+    ) {
+      return {
+        failure: crearFailure(
+          "DATOS_INVALIDOS",
+          "Los buffers de preparación previa y limpieza posterior no pueden ser negativos."
+        ),
+      };
     }
 
-    // 5. Ejecutar motor de cálculo puro
+    if (
+      input.anticipacionMinimaMin !== undefined &&
+      input.anticipacionMinimaMin < 0
+    ) {
+      return {
+        failure: crearFailure(
+          "DATOS_INVALIDOS",
+          "La anticipación mínima en minutos no puede ser negativa."
+        ),
+      };
+    }
+
+    if (input.maxCitasDia !== undefined && input.maxCitasDia <= 0) {
+      return {
+        failure: crearFailure(
+          "DATOS_INVALIDOS",
+          "El cupo máximo diario debe ser mayor a 0 citas."
+        ),
+      };
+    }
+
+    // 4. Evaluar cierre especial o feriado en la fecha consultada
+    if (input.excepcionFecha?.cerradoCompleto) {
+      if (input.retornarFailureEnBloqueo) {
+        const motivo = input.excepcionFecha.motivo
+          ? `No hay servicio disponible por: ${input.excepcionFecha.motivo}.`
+          : "La fecha seleccionada se encuentra cerrada por feriado o bloqueo especial.";
+        return {
+          failure: crearFailure("FECHA_BLOQUEADA", motivo),
+        };
+      }
+      return { data: [] };
+    }
+
+    // 5. Verificar horario del día (permitiendo sobrescritura por horario especial)
+    const horario = input.horarioAtencion ?? input.horarioLaboral;
+    const tieneHorarioEspecial = Boolean(
+      input.excepcionFecha?.abreEspecial && input.excepcionFecha?.cierraEspecial
+    );
+
+    if (!tieneHorarioEspecial && (!horario || horario.activo === false)) {
+      return { data: [] };
+    }
+
+    // 6. Ejecutar motor de cálculo puro
     const slots = calcularSlotsDisponibles({
       horarioAtencion: horario,
       duracionServicioMin: duracion,
-      bufferPreparacionMin: input.bufferPreparacionMin ?? input.bufferMin,
+      bufferPreparacionMin: bufferEvaluado,
       lunchBreak: input.lunchBreak,
       descansos: input.descansos,
+      bloqueosParciales: input.bloqueosParciales,
+      excepcionFecha: input.excepcionFecha,
       citasExistentes: input.citasExistentes ?? input.citas,
+      excluirCitaId: input.excluirCitaId,
       pasoMin: input.pasoMin,
       bufferIncluidoEnJornada: input.bufferIncluidoEnJornada,
+      anticipacionMinimaMin: input.anticipacionMinimaMin,
+      anticipacionMaximaDias: input.anticipacionMaximaDias,
+      fechaObjetivo: input.fechaObjetivo ?? input.fecha,
+      ahoraReferencia: input.ahoraReferencia,
+      maxCitasDia: input.maxCitasDia,
     });
 
     return { data: slots };
