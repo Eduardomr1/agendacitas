@@ -6,6 +6,12 @@
  * sin acoplamiento a base de datos ni interfaz gráfica.
  */
 
+import {
+  horaAMinutos,
+  type CitaOcupada,
+  type HorarioAtencionDia,
+} from "./motorDisponibilidad";
+
 export interface TramoPenalizacionCancelacion {
   /** Horas mínimas antes del inicio de la cita para aplicar este tramo */
   horasAntesMin: number;
@@ -375,3 +381,152 @@ export function evaluarElegibilidadReprogramacion(
     fechaLimiteReprogramacion,
   };
 }
+
+export interface ParametrosValidarReprogramacion {
+  cita: CitaEvaluacionPolitica;
+  politica?: PoliticaCancelacionConfig;
+  ahora: Date;
+  nuevoInicio: Date;
+  nuevoFin: Date;
+  citasExistentes?: CitaOcupada[];
+  horarioLaboral?: HorarioAtencionDia | null;
+}
+
+export interface ResultadoValidacionReprogramacion {
+  permitida: boolean;
+  elegibilidad: ResultadoElegibilidadReprogramacion;
+  autoColisionIgnorada: boolean;
+  colisionConTerceros: boolean;
+  motivoRechazo?:
+    | MotivoRechazoReprogramacion
+    | "HORARIO_OCUPADO"
+    | "FUERA_DE_HORARIO_LABORAL";
+  mensaje: string;
+}
+
+/**
+ * Valida la reprogramación de una cita existente combinando políticas de antelación
+ * con verificación de no-colisión de calendario, excluyendo expresamente el propio ID
+ * de la cita para permitir desplazamientos o ajustes de horario contiguos sin auto-bloqueo.
+ */
+export function validarPoliticaReprogramacionConExclusion(
+  params: ParametrosValidarReprogramacion,
+): ResultadoValidacionReprogramacion {
+  const {
+    cita,
+    politica = POLITICA_CANCELACION_POR_DEFECTO,
+    ahora,
+    nuevoInicio,
+    nuevoFin,
+    citasExistentes = [],
+    horarioLaboral,
+  } = params;
+
+  const elegibilidad = evaluarElegibilidadReprogramacion(
+    cita,
+    politica,
+    ahora,
+    nuevoInicio,
+  );
+
+  if (!elegibilidad.elegible) {
+    return {
+      permitida: false,
+      elegibilidad,
+      autoColisionIgnorada: false,
+      colisionConTerceros: false,
+      motivoRechazo: elegibilidad.motivoRechazo,
+      mensaje: "La cita no cumple los requisitos temporales o límites de reprogramación.",
+    };
+  }
+
+  if (nuevoInicio.getTime() >= nuevoFin.getTime()) {
+    return {
+      permitida: false,
+      elegibilidad,
+      autoColisionIgnorada: false,
+      colisionConTerceros: false,
+      motivoRechazo: "MISMO_HORARIO_ORIGINAL",
+      mensaje: "El horario de inicio propuesto debe ser anterior al horario de fin.",
+    };
+  }
+
+  // Verificar horario laboral si está configurado
+  if (horarioLaboral && horarioLaboral.activo !== false) {
+    const horaIniStr = `${String(nuevoInicio.getUTCHours()).padStart(2, "0")}:${String(nuevoInicio.getUTCMinutes()).padStart(2, "0")}`;
+    const horaFinStr = `${String(nuevoFin.getUTCHours()).padStart(2, "0")}:${String(nuevoFin.getUTCMinutes()).padStart(2, "0")}`;
+    const iniMin = horaAMinutos(horaIniStr);
+    const finMin = horaAMinutos(horaFinStr);
+    const abreMin = horaAMinutos(horarioLaboral.abre);
+    const cierraMin = horaAMinutos(horarioLaboral.cierra);
+
+    if (iniMin < abreMin || finMin > cierraMin) {
+      return {
+        permitida: false,
+        elegibilidad,
+        autoColisionIgnorada: false,
+        colisionConTerceros: false,
+        motivoRechazo: "FUERA_DE_HORARIO_LABORAL",
+        mensaje: "El horario propuesto está fuera del horario de atención del negocio.",
+      };
+    }
+  }
+
+  let autoColisionIgnorada = false;
+  let colisionConTerceros = false;
+
+  const nuevoInicioMs = nuevoInicio.getTime();
+  const nuevoFinMs = nuevoFin.getTime();
+
+  for (const ocupada of citasExistentes) {
+    // Si la cita ocupada es la misma cita que se está reprogramando, se ignora explícitamente
+    if (ocupada.id && ocupada.id === cita.id) {
+      autoColisionIgnorada = true;
+      continue;
+    }
+
+    const estado = (ocupada.estado ?? "confirmada").trim().toLowerCase();
+    if (estado === "cancelada" || estado === "cancelado") {
+      continue;
+    }
+
+    const ocupadaInicioMs =
+      ocupada.inicio instanceof Date
+        ? ocupada.inicio.getTime()
+        : new Date(ocupada.inicio).getTime();
+    const ocupadaFinMs =
+      ocupada.fin instanceof Date
+        ? ocupada.fin.getTime()
+        : new Date(ocupada.fin).getTime();
+
+    if (isNaN(ocupadaInicioMs) || isNaN(ocupadaFinMs)) {
+      continue;
+    }
+
+    // Traslape de intervalos: (A_ini < B_fin) y (A_fin > B_ini)
+    if (nuevoInicioMs < ocupadaFinMs && nuevoFinMs > ocupadaInicioMs) {
+      colisionConTerceros = true;
+      break;
+    }
+  }
+
+  if (colisionConTerceros) {
+    return {
+      permitida: false,
+      elegibilidad,
+      autoColisionIgnorada,
+      colisionConTerceros: true,
+      motivoRechazo: "HORARIO_OCUPADO",
+      mensaje: "El nuevo horario entra en conflicto con otra cita previamente confirmada.",
+    };
+  }
+
+  return {
+    permitida: true,
+    elegibilidad,
+    autoColisionIgnorada,
+    colisionConTerceros: false,
+    mensaje: "Horario de reprogramación disponible y elegible.",
+  };
+}
+
