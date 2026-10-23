@@ -7,6 +7,7 @@ import {
   calcularFechaLimiteCancelacionGratuita,
   evaluarCancelacionCita,
   evaluarElegibilidadReprogramacion,
+  validarPoliticaReprogramacionConExclusion,
 } from "./politicasCancelacion";
 
 describe("politicasCancelacion — Motor puro de dominio", () => {
@@ -226,6 +227,71 @@ describe("politicasCancelacion — Motor puro de dominio", () => {
       );
       expect(noActiva.elegible).toBe(false);
       expect(noActiva.motivoRechazo).toBe("CITA_NO_ACTIVA");
+    });
+  });
+
+  describe("validarPoliticaReprogramacionConExclusion", () => {
+    it("permite reprogramar a un horario contiguo que traslapa con la cita actual sin auto-colision", () => {
+      // Cita actual de 16:00 a 17:00
+      // Reprogramación propuesta: 16:30 a 17:30 (traslape de 30 min con su propio horario)
+      const ahora = new Date("2026-10-24T10:00:00Z");
+      const nuevoInicio = new Date("2026-10-25T16:30:00Z");
+      const nuevoFin = new Date("2026-10-25T17:30:00Z");
+
+      const citasExistentes = [
+        {
+          id: "cita-101", // La misma cita en su posición actual
+          inicio: new Date("2026-10-25T16:00:00Z"),
+          fin: new Date("2026-10-25T17:00:00Z"),
+          estado: "confirmada",
+        },
+      ];
+
+      const resultado = validarPoliticaReprogramacionConExclusion({
+        cita: citaBase,
+        ahora,
+        nuevoInicio,
+        nuevoFin,
+        citasExistentes,
+      });
+
+      expect(resultado.permitida).toBe(true);
+      expect(resultado.autoColisionIgnorada).toBe(true);
+      expect(resultado.colisionConTerceros).toBe(false);
+      expect(resultado.motivoRechazo).toBeUndefined();
+    });
+
+    it("bloquea reprogramacion si el nuevo horario colisiona con un tercero", () => {
+      const ahora = new Date("2026-10-24T10:00:00Z");
+      const nuevoInicio = new Date("2026-10-25T18:00:00Z");
+      const nuevoFin = new Date("2026-10-25T19:00:00Z");
+
+      const citasExistentes = [
+        {
+          id: "cita-101",
+          inicio: new Date("2026-10-25T16:00:00Z"),
+          fin: new Date("2026-10-25T17:00:00Z"),
+          estado: "confirmada",
+        },
+        {
+          id: "cita-tercero-202",
+          inicio: new Date("2026-10-25T18:30:00Z"),
+          fin: new Date("2026-10-25T19:30:00Z"),
+          estado: "confirmada",
+        },
+      ];
+
+      const resultado = validarPoliticaReprogramacionConExclusion({
+        cita: citaBase,
+        ahora,
+        nuevoInicio,
+        nuevoFin,
+        citasExistentes,
+      });
+
+      expect(resultado.permitida).toBe(false);
+      expect(resultado.colisionConTerceros).toBe(true);
+      expect(resultado.motivoRechazo).toBe("HORARIO_OCUPADO");
     });
   });
 });
