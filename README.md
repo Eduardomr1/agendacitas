@@ -10,6 +10,9 @@ Diseñada bajo los principios de **Clean Architecture** (Domain, Data, Presentat
 
 - **Página Pública de Reserva ([slug]):** Interfaz intuitiva en 3 pasos (Servicio → Fecha/Horario → Datos del cliente) que consume el motor de cálculo de disponibilidad.
 - **Motor Matemático Anti-Colisión:** Algoritmo que cruza horarios laborales, duración del servicio y citas existentes para garantizar que no existan traslapes ni reservas fuera de horario.
+- **Motor Inteligente de Listas de Espera (`listaEspera.ts`):** Emparejamiento determinístico ante huecos liberados por cancelación. Clasifica candidatos según compatibilidad de franja horaria, antigüedad FIFO y prioridad operativa, soportando auto-reasignación directa o notificación escalonada.
+- **Políticas de Cancelación & Reprogramación sin Auto-Bloqueo (`politicasCancelacion.ts`):** Reglas puras de penalización en centavos y límites de cambios. Al reprogramar en horarios contiguos o con traslape parcial, excluye automáticamente el propio ID de la cita original para evitar auto-colisión.
+- **Series de Citas Recurrentes con Rollback Transaccional (`citasRecurrentes.ts`):** Planificación atómica de citas semanales, quincenales y mensuales. Detecta anticipadamente colisiones contra feriados o citas previas, garantizando integridad transaccional (todo o nada) o estrategias de salto de colisiones.
 - **Panel Administrativo del Negocio:**
   - **Catálogo de Servicios:** Creación, edición, activación/desactivación y fijación de precios en centavos para precisión monetaria.
   - **Horarios Laborales:** Configuración de rangos de apertura y cierre por día de la semana.
