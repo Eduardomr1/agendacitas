@@ -3,6 +3,8 @@ export * from "./domain/entities";
 export * from "./domain/stepperReserva";
 export * from "./domain/calendar";
 export * from "./domain/motorDisponibilidad";
+export * from "./domain/asignacionEspecialistas";
+export * from "./domain/usecases/AsignarEspecialistaOptimoUseCase";
 export * from "./presentation/ReservasView";
 export * from "./presentation/components/BookingStepperNav";
 export * from "./presentation/components/PasoServicios";
