@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { RecursoFisico } from "../recursosFisicos";
-import { AsignarRecursoFisicoUseCase } from "./AsignarRecursoFisicoUseCase";
+import {
+  AsignarRecursoFisicoUseCase,
+  MotorRecursosFisicos,
+  type RecursoFisico,
+} from "../../index";
 
 describe("AsignarRecursoFisicoUseCase", () => {
   const useCase = new AsignarRecursoFisicoUseCase();
@@ -52,6 +55,7 @@ describe("AsignarRecursoFisicoUseCase", () => {
   ];
 
   it("asigna la cabina de menor carga cuando otra cabina está ocupada en la misma franja", () => {
+    expect(MotorRecursosFisicos).toBeDefined();
     const res = useCase.execute({
       negocioId: "neg-clinica",
       solicitud: {

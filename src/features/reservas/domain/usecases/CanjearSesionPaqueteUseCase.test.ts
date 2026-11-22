@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type {
-  MovimientoCreditoPaquete,
-  PaqueteSesionesCliente,
-} from "../paquetesSesiones";
-import { CanjearSesionPaqueteUseCase } from "./CanjearSesionPaqueteUseCase";
+import {
+  CanjearSesionPaqueteUseCase,
+  seleccionarMejorPaqueteParaReserva,
+  type MovimientoCreditoPaquete,
+  type PaqueteSesionesCliente,
+} from "../../index";
 
 describe("CanjearSesionPaqueteUseCase", () => {
   const useCase = new CanjearSesionPaqueteUseCase();
@@ -38,6 +39,7 @@ describe("CanjearSesionPaqueteUseCase", () => {
   };
 
   it("auto-selecciona el paquete por vencimiento más próximo (FEFO), actualiza estado a AGOTADO y recalcula billetera", () => {
+    expect(seleccionarMejorPaqueteParaReserva).toBeDefined();
     const res = useCase.execute({
       negocioId: "neg-spa",
       clienteId: "cli-1",
